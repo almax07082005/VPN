@@ -206,29 +206,56 @@ Manual smoke test:
 
 ## Uninstall / teardown
 
-To fully remove this VPN from both VMs — stop containers, delete volumes, wipe secrets, remove the image, close the firewall port. Run on each VM separately.
+Port `:443` on each VM is exposed by two things:
+
+1. **sing-box listening on `:443`** (via `network_mode: host` — no Docker port mapping, the process binds the host's socket directly). Stopping the container closes the listener; at that point nothing on the VM answers on `:443` regardless of any firewall state.
+2. **The inbound allow rule** — on most cloud VMs (Hetzner, Vultr, DO, AWS, Beget, …) this lives in the **provider's cloud firewall panel**, not in local `ufw`. The bootstrap scripts never touch cloud firewalls. If `ufw` happens to be active, `open_port_443` also adds a local allow rule there; if `ufw` is inactive (the default on most cloud images — including the hetzner and beget2 VMs here), it's a no-op.
+
+So a complete teardown is: stop the container → remove the files → **remove the inbound `:443` rule in your cloud provider's firewall UI** → (optionally) remove the ufw rule.
 
 ### Exit VM
 
 ```bash
 ssh <exit-vm>
-cd ~/VPN/exit && sudo docker compose down -v
-sudo rm -rf ~/VPN                                            # repo + .env + deployment-info.txt + rendered config
+cd ~/VPN/exit && sudo docker compose down -v                # stop sing-box, close :443 on the host
+sudo rm -rf ~/VPN                                           # repo + .env + deployment-info.txt + rendered config
 sudo docker image rm ghcr.io/sagernet/sing-box:v1.10.3 2>/dev/null || true
+# belt-and-suspenders — only does anything if ufw was active:
 command -v ufw >/dev/null && sudo ufw delete allow 443/tcp 2>/dev/null || true
 ```
+
+Then in the provider's web console, delete the inbound `:443` rule:
+- **Hetzner** → Cloud Console → Firewalls → (your firewall) → Inbound rules → delete the `443/tcp` rule.
+- **DigitalOcean** → Networking → Firewalls → inbound rules.
+- **Vultr** → Products → Firewall → delete the rule.
+- **AWS** → EC2 → Security Groups → revoke inbound.
 
 ### Russia VM
 
 ```bash
 ssh <russia-vm>
 cd ~/VPN/russia && sudo docker compose down -v
-sudo rm -rf ~/VPN                                            # repo + .env + users/*.json + rendered config
+sudo rm -rf ~/VPN                                           # repo + .env + users/*.json + rendered config
 sudo docker image rm ghcr.io/sagernet/sing-box:v1.10.3 2>/dev/null || true
 command -v ufw >/dev/null && sudo ufw delete allow 443/tcp 2>/dev/null || true
 ```
 
-Docker itself is left in place — it's harmless and reusable. If you want to uninstall it too:
+Then close `:443` in Beget's panel (Служба → Правила брандмауэра / Firewall rules) or whichever RU host you used.
+
+### Verify the port is closed
+
+From any machine with network access to the VM:
+
+```bash
+nc -zv <VM_IP> 443 2>&1
+# expected: "Connection refused" (listener gone) or a connect timeout (firewall still blocks it at the provider)
+```
+
+If you still see "Connected", either sing-box is somehow still running (`docker ps`) or you stopped at one VM but not both.
+
+### Remove Docker too (optional)
+
+Docker is left in place — harmless and reusable. To uninstall it:
 
 ```bash
 sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -237,7 +264,7 @@ sudo rm -rf /var/lib/docker /etc/docker
 
 ### Clients
 
-Delete the profile from Streisand / Hiddify on each device. That's enough to stop that device from connecting, but the UUID remains valid server-side until you also run `sudo ./user.sh remove <name>` on the Russia VM (or tear down the Russia VM entirely, as above).
+Delete the profile from Streisand / Hiddify on each device. That stops that device from connecting, but the UUID remains valid server-side until you also run `sudo ./user.sh remove <name>` on the Russia VM (or tear down the Russia VM entirely, as above).
 
 ## Design notes
 
