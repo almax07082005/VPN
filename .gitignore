@@ -1,22 +1,12 @@
-# Secrets & generated state — never commit
+# Secrets — never commit. The operator creates russia/.env to feed the
+# exit-handoff values into docker compose; after first boot it can be deleted
+# (state lives in the named volume instead).
 .env
 **/.env
-deployment-info.txt
+
+# Belt-and-suspenders: deployment-info.txt is written inside the container
+# volume, but operators occasionally `docker cp` it to the host for safekeeping.
 **/deployment-info.txt
-client-config.txt
-**/client-config.txt
-
-# Rendered configs (regenerated from *.tmpl on every deploy / user-mgmt call)
-russia/config/config.json
-exit/config/config.json
-
-# Per-user records (UUIDs live here — treat as secrets)
-russia/users/*.json
-!russia/users/.gitkeep
-
-# sing-box runtime state (cached rule-sets, logs)
-russia/cache/
-exit/cache/
 
 # OS / editor cruft
 .DS_Store

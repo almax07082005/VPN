@@ -1,47 +1,48 @@
 #!/usr/bin/env bash
 #
-# Manage VLESS+Reality users on the Russia VM.
+# Manage VLESS+Reality users on the Russia entry hop (in-container CLI).
 #
-#   sudo ./user.sh add <name> [--note "…"]
-#   sudo ./user.sh list
-#   sudo ./user.sh show <name>
-#   sudo ./user.sh remove <name>
-#   sudo ./user.sh rotate <name>
+#   vpn add     <name> [--note "…"]
+#   vpn list
+#   vpn show    <name>
+#   vpn remove  <name>
+#   vpn rotate  <name>
+#   vpn init-admin [<name>]   # called by entrypoint on first boot
 #
-# Source of truth: users/<name>.json — one file per user.
+# Source of truth: /var/lib/vpn/users/<name>.json — one file per user.
 
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/.." && pwd)"
-# shellcheck source=../scripts/common.sh
-source "$REPO_ROOT/scripts/common.sh"
+# shellcheck source=../docker/common.sh
+source /usr/local/lib/vpn/common.sh
 
-USERS_DIR="$HERE/users"
-CONFIG_OUT="$HERE/config/config.json"
-CONFIG_TMPL="$HERE/config/config.json.tmpl"
-ENV_FILE="$HERE/.env"
+VPN_STATE="/var/lib/vpn"
+ENV_FILE="$VPN_STATE/.env"
+USERS_DIR="$VPN_STATE/users"
+CONFIG_OUT="/etc/sing-box/config.json"
+CONFIG_TMPL="/etc/vpn/config.json.tmpl"
 
 usage() {
   cat <<EOF
 Usage:
-  sudo ./user.sh add     <name> [--note "…"]
-  sudo ./user.sh list
-  sudo ./user.sh show    <name>
-  sudo ./user.sh remove  <name>
-  sudo ./user.sh rotate  <name>
+  vpn add         <name> [--note "…"]
+  vpn list
+  vpn show        <name>
+  vpn remove      <name>
+  vpn rotate      <name>
+  vpn init-admin  [<name>]
 EOF
   exit 1
 }
 
 _load_env() {
-  [[ -f $ENV_FILE ]] || die ".env not found — run bootstrap.sh first"
+  [[ -f $ENV_FILE ]] || die ".env not found at $ENV_FILE — is this a fresh volume? the entrypoint should have written it"
   set -o allexport; # shellcheck disable=SC1091
   source "$ENV_FILE"
   set +o allexport
   for v in RU_SERVER_IP RU_REALITY_PRIVKEY RU_REALITY_PUBKEY RU_SHORT_ID \
            EXIT_SERVER_IP EXIT_REALITY_PUBKEY EXIT_USER_UUID EXIT_SHORT_ID; do
-    [[ -n ${!v:-} ]] || die ".env is missing $v — re-run bootstrap.sh"
+    [[ -n ${!v:-} ]] || die ".env is missing $v"
   done
   export RU_REALITY_PRIVKEY RU_SHORT_ID \
          EXIT_SERVER_IP EXIT_REALITY_PUBKEY EXIT_USER_UUID EXIT_SHORT_ID
@@ -56,7 +57,6 @@ _user_file()   { printf '%s/%s.json' "$USERS_DIR" "$1"; }
 _user_exists() { [[ -f $(_user_file "$1") ]]; }
 
 _build_users_json() {
-  # Emits a compact JSON array suitable for inbounds[0].users.
   mkdir -p "$USERS_DIR"
   shopt -s nullglob
   local files=( "$USERS_DIR"/*.json )
@@ -68,33 +68,33 @@ _build_users_json() {
   jq -cs 'map({name, uuid, flow: "xtls-rprx-vision"})' "${files[@]}"
 }
 
-_render_config() {
+# Render /etc/sing-box/config.json from the template + current users.
+render_config() {
   require_cmd envsubst
   require_cmd jq
   local users_json
   users_json="$(_build_users_json)"
+  mkdir -p "$(dirname "$CONFIG_OUT")"
   RU_USERS_JSON="$users_json" \
     envsubst '${RU_USERS_JSON} ${RU_REALITY_PRIVKEY} ${RU_SHORT_ID} ${EXIT_SERVER_IP} ${EXIT_REALITY_PUBKEY} ${EXIT_USER_UUID} ${EXIT_SHORT_ID}' \
     < "$CONFIG_TMPL" > "$CONFIG_OUT.tmp"
-  # Validate JSON before replacing the live file.
   jq empty "$CONFIG_OUT.tmp"
   mv "$CONFIG_OUT.tmp" "$CONFIG_OUT"
   chmod 600 "$CONFIG_OUT"
 }
 
+# Re-render + signal the PID-1 supervisor to restart sing-box.
 _apply() {
-  # Render config, then either start the stack or hot-reload it.
-  _render_config
-  if (cd "$HERE" && docker compose ps --status running | grep -q sing-box); then
-    (cd "$HERE" && reload_sing_box)
+  render_config
+  if [[ -f /proc/1/comm ]] && grep -qx 'vpn-supervisor\|bash' /proc/1/comm 2>/dev/null; then
+    reload_sing_box
+    log_ok "sing-box reloaded"
   else
-    log_info "starting sing-box"
-    (cd "$HERE" && docker compose up -d)
+    log_info "PID 1 is not the supervisor — skipping reload signal (sing-box will pick up the new config on next start)"
   fi
 }
 
 _vless_uri_for() {
-  # _vless_uri_for <name> → echoes vless:// URI
   local name="$1" uuid
   uuid="$(jq -r .uuid "$(_user_file "$name")")"
   build_vless_uri \
@@ -132,6 +132,7 @@ cmd_add() {
   local uuid created
   uuid="$(generate_uuid)"
   created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  mkdir -p "$USERS_DIR"
   jq -n --arg n "$name" --arg u "$uuid" --arg c "$created" --arg note "$note" \
     '{name:$n, uuid:$u, created_at:$c, note:$note}' \
     > "$(_user_file "$name")"
@@ -148,7 +149,7 @@ cmd_list() {
   local files=( "$USERS_DIR"/*.json )
   shopt -u nullglob
   if (( ${#files[@]} == 0 )); then
-    echo "(no users yet — run: sudo ./user.sh add <name>)"
+    echo "(no users yet — run: vpn add <name>)"
     return
   fi
   printf '%-20s %-10s %-22s %s\n' NAME UUID_PREFIX CREATED_AT NOTE
@@ -189,18 +190,38 @@ cmd_rotate() {
   _print_client "$name"
 }
 
+# Called by the entrypoint on first boot (no existing .env from a previous run).
+# Renders the config with zero users, then creates the initial admin user.
+# Used before sing-box is launched, so no reload signal is sent.
+cmd_init_admin() {
+  local name="${1:-admin}"
+  _valid_name "$name"
+  mkdir -p "$USERS_DIR"
+  local uuid created
+  uuid="$(generate_uuid)"
+  created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  jq -n --arg n "$name" --arg u "$uuid" --arg c "$created" --arg note "initial bootstrap user" \
+    '{name:$n, uuid:$u, created_at:$c, note:$note}' \
+    > "$(_user_file "$name")"
+  chmod 600 "$(_user_file "$name")"
+  render_config
+  log_ok "initial user '$name' created"
+  _print_client "$name"
+}
+
 main() {
   (($# > 0)) || usage
-  require_root
   local sub="$1"; shift
   _load_env
   case "$sub" in
-    add)     (($# >= 1)) || usage; cmd_add    "$@";;
-    list)    cmd_list;;
-    show)    (($# == 1)) || usage; cmd_show   "$1";;
-    remove)  (($# == 1)) || usage; cmd_remove "$1";;
-    rotate)  (($# == 1)) || usage; cmd_rotate "$1";;
-    -h|--help) usage;;
+    add)         (($# >= 1)) || usage; cmd_add        "$@";;
+    list)        cmd_list;;
+    show)        (($# == 1)) || usage; cmd_show       "$1";;
+    remove)      (($# == 1)) || usage; cmd_remove     "$1";;
+    rotate)      (($# == 1)) || usage; cmd_rotate     "$1";;
+    init-admin)  cmd_init_admin "$@";;
+    render)      render_config;;   # internal: used by entrypoint
+    -h|--help)   usage;;
     *) log_err "unknown subcommand: $sub"; usage;;
   esac
 }

@@ -1,0 +1,47 @@
+#!/bin/bash
+# PID-1 supervisor for sing-box.
+#   SIGHUP:  restart the child (config was re-rendered by `vpn` CLI).
+#   SIGTERM / SIGINT:  forward to the child and exit 0 (docker stop).
+#   child dies unexpectedly (no reload flag):  propagate exit code so Docker's
+#   restart policy decides what to do.
+
+set -u
+
+CHILD=""
+RELOAD=0
+STOP=0
+
+on_hup()  { RELOAD=1; [ -n "$CHILD" ] && kill -TERM "$CHILD" 2>/dev/null || true; }
+on_term() { STOP=1;   [ -n "$CHILD" ] && kill -TERM "$CHILD" 2>/dev/null || true; }
+
+trap on_hup  HUP
+trap on_term TERM INT
+
+mkdir -p /var/lib/vpn/cache
+
+while true; do
+  RELOAD=0
+  sing-box run -D /var/lib/vpn/cache -c /etc/sing-box/config.json &
+  CHILD=$!
+
+  # wait(1) in bash returns early when a trapped signal fires, even if the
+  # child is still alive. Loop until the child is actually reaped.
+  wait "$CHILD" 2>/dev/null
+  rc=$?
+  while kill -0 "$CHILD" 2>/dev/null; do
+    wait "$CHILD" 2>/dev/null
+    rc=$?
+  done
+  CHILD=""
+
+  if [ "$STOP" -eq 1 ]; then
+    exit 0
+  fi
+  if [ "$RELOAD" -eq 1 ] || [ -f /var/lib/vpn/.reload ]; then
+    rm -f /var/lib/vpn/.reload
+    continue
+  fi
+
+  # Unexpected exit — bail so Docker's restart policy takes over.
+  exit "$rc"
+done

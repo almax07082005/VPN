@@ -1,15 +1,41 @@
+# Russia VM (entry hop). Deploy inside Russia.
+#
+# First boot: populate ./.env with the four handoff values printed by the
+# exit container, then `docker compose up -d --build`. Re-reads ./.env on
+# every up, but after first boot all state lives in the named volume — the
+# env vars are ignored if /var/lib/vpn/.env already exists in the volume.
+
 services:
-  sing-box:
-    image: ghcr.io/sagernet/sing-box:v1.10.3
-    container_name: sing-box
+  vpn-russia:
+    build:
+      context: ..
+      dockerfile: russia/Dockerfile
+    image: vpn-russia:local
+    container_name: vpn-russia
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "443:443/tcp"
+    networks:
+      - vpn-net
     volumes:
-      - ./config:/etc/sing-box:ro
-      - ./cache:/var/lib/sing-box
-    command: ["run", "-D", "/var/lib/sing-box", "-c", "/etc/sing-box/config.json"]
+      - vpn-russia-data:/var/lib/vpn
+    environment:
+      - EXIT_IP=${EXIT_IP:-}
+      - EXIT_PUBKEY=${EXIT_PUBKEY:-}
+      - EXIT_UUID=${EXIT_UUID:-}
+      - EXIT_SHORT_ID=${EXIT_SHORT_ID:-}
+      - INITIAL_USER=${INITIAL_USER:-admin}
+      - RU_PUBLIC_IP=${RU_PUBLIC_IP:-}
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  vpn-net:
+    name: vpn-net
+
+volumes:
+  vpn-russia-data:
+    name: vpn-russia-data

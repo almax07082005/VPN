@@ -1,15 +1,29 @@
+# Exit VM (egress hop). Deploy anywhere outside Russia.
+#
+# First boot generates keys and prints four handoff values to `docker logs`;
+# paste them into russia/.env on the Russia VM. State lives in the named
+# volume, so re-running with the same volume preserves keys and UUID.
+
 services:
-  sing-box:
-    image: ghcr.io/sagernet/sing-box:v1.10.3
-    container_name: sing-box
+  vpn-exit:
+    build:
+      context: ..
+      dockerfile: exit/Dockerfile
+    image: vpn-exit:local
+    container_name: vpn-exit
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "443:443/tcp"
     volumes:
-      - ./config:/etc/sing-box:ro
-      - ./cache:/var/lib/sing-box
-    command: ["run", "-D", "/var/lib/sing-box", "-c", "/etc/sing-box/config.json"]
+      - vpn-exit-data:/var/lib/vpn
+    environment:
+      - EXIT_PUBLIC_IP=${EXIT_PUBLIC_IP:-}
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  vpn-exit-data:
+    name: vpn-exit-data
