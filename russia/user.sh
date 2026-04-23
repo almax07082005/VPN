@@ -40,11 +40,11 @@ _load_env() {
   source "$ENV_FILE"
   set +o allexport
   for v in RU_SERVER_IP RU_REALITY_PRIVKEY RU_REALITY_PUBKEY RU_SHORT_ID \
-           NL_SERVER_IP NL_REALITY_PUBKEY NL_USER_UUID NL_SHORT_ID; do
+           EXIT_SERVER_IP EXIT_REALITY_PUBKEY EXIT_USER_UUID EXIT_SHORT_ID; do
     [[ -n ${!v:-} ]] || die ".env is missing $v — re-run bootstrap.sh"
   done
   export RU_REALITY_PRIVKEY RU_SHORT_ID \
-         NL_SERVER_IP NL_REALITY_PUBKEY NL_USER_UUID NL_SHORT_ID
+         EXIT_SERVER_IP EXIT_REALITY_PUBKEY EXIT_USER_UUID EXIT_SHORT_ID
 }
 
 _valid_name() {
@@ -74,7 +74,7 @@ _render_config() {
   local users_json
   users_json="$(_build_users_json)"
   RU_USERS_JSON="$users_json" \
-    envsubst '${RU_USERS_JSON} ${RU_REALITY_PRIVKEY} ${RU_SHORT_ID} ${NL_SERVER_IP} ${NL_REALITY_PUBKEY} ${NL_USER_UUID} ${NL_SHORT_ID}' \
+    envsubst '${RU_USERS_JSON} ${RU_REALITY_PRIVKEY} ${RU_SHORT_ID} ${EXIT_SERVER_IP} ${EXIT_REALITY_PUBKEY} ${EXIT_USER_UUID} ${EXIT_SHORT_ID}' \
     < "$CONFIG_TMPL" > "$CONFIG_OUT.tmp"
   # Validate JSON before replacing the live file.
   jq empty "$CONFIG_OUT.tmp"

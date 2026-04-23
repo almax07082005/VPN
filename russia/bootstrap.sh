@@ -4,10 +4,10 @@
 #
 # Usage:
 #   sudo bash bootstrap.sh \
-#     --nl-ip       <NL_SERVER_IP>     \
-#     --nl-pubkey   <NL_REALITY_PUBKEY> \
-#     --nl-uuid     <NL_USER_UUID>      \
-#     --nl-short-id <NL_SHORT_ID>
+#     --exit-ip       <EXIT_SERVER_IP>     \
+#     --exit-pubkey   <EXIT_REALITY_PUBKEY> \
+#     --exit-uuid     <EXIT_USER_UUID>      \
+#     --exit-short-id <EXIT_SHORT_ID>
 #
 # Idempotent: re-running refreshes the config and restarts sing-box, but
 # does not regenerate server keys unless you delete .env first.
@@ -22,25 +22,25 @@ source "$REPO_ROOT/scripts/common.sh"
 usage() {
   cat <<EOF
 Usage: sudo bash bootstrap.sh \\
-  --nl-ip       <ip>      \\
-  --nl-pubkey   <pubkey>  \\
-  --nl-uuid     <uuid>    \\
-  --nl-short-id <short-id>
+  --exit-ip       <ip>      \\
+  --exit-pubkey   <pubkey>  \\
+  --exit-uuid     <uuid>    \\
+  --exit-short-id <short-id>
 EOF
   exit 1
 }
 
-NL_SERVER_IP_ARG=""
-NL_REALITY_PUBKEY_ARG=""
-NL_USER_UUID_ARG=""
-NL_SHORT_ID_ARG=""
+EXIT_SERVER_IP_ARG=""
+EXIT_REALITY_PUBKEY_ARG=""
+EXIT_USER_UUID_ARG=""
+EXIT_SHORT_ID_ARG=""
 
 while (($#)); do
   case "$1" in
-    --nl-ip)        NL_SERVER_IP_ARG="$2";       shift 2;;
-    --nl-pubkey)    NL_REALITY_PUBKEY_ARG="$2";  shift 2;;
-    --nl-uuid)      NL_USER_UUID_ARG="$2";       shift 2;;
-    --nl-short-id)  NL_SHORT_ID_ARG="$2";        shift 2;;
+    --exit-ip)        EXIT_SERVER_IP_ARG="$2";       shift 2;;
+    --exit-pubkey)    EXIT_REALITY_PUBKEY_ARG="$2";  shift 2;;
+    --exit-uuid)      EXIT_USER_UUID_ARG="$2";       shift 2;;
+    --exit-short-id)  EXIT_SHORT_ID_ARG="$2";        shift 2;;
     -h|--help)      usage;;
     *) log_err "unknown arg: $1"; usage;;
   esac
@@ -66,20 +66,20 @@ if [[ -f $HERE/.env ]]; then
   set +o allexport
 fi
 
-NL_SERVER_IP="${NL_SERVER_IP_ARG:-${NL_SERVER_IP:-}}"
-NL_REALITY_PUBKEY="${NL_REALITY_PUBKEY_ARG:-${NL_REALITY_PUBKEY:-}}"
-NL_USER_UUID="${NL_USER_UUID_ARG:-${NL_USER_UUID:-}}"
-NL_SHORT_ID="${NL_SHORT_ID_ARG:-${NL_SHORT_ID:-}}"
+EXIT_SERVER_IP="${EXIT_SERVER_IP_ARG:-${EXIT_SERVER_IP:-}}"
+EXIT_REALITY_PUBKEY="${EXIT_REALITY_PUBKEY_ARG:-${EXIT_REALITY_PUBKEY:-}}"
+EXIT_USER_UUID="${EXIT_USER_UUID_ARG:-${EXIT_USER_UUID:-}}"
+EXIT_SHORT_ID="${EXIT_SHORT_ID_ARG:-${EXIT_SHORT_ID:-}}"
 
-for v in NL_SERVER_IP NL_REALITY_PUBKEY NL_USER_UUID NL_SHORT_ID; do
+for v in EXIT_SERVER_IP EXIT_REALITY_PUBKEY EXIT_USER_UUID EXIT_SHORT_ID; do
   [[ -n ${!v} ]] || { log_err "missing $v — pass it via --$(echo "$v" | tr '[:upper:]_' '[:lower:]-')"; usage; }
 done
 
-log_info "probing Netherlands VM at $NL_SERVER_IP:443"
-if ! probe_tcp "$NL_SERVER_IP" 443; then
-  log_warn "cannot reach $NL_SERVER_IP:443 — check firewall / NL VM is up before trusting this deploy"
+log_info "probing Exit VM at $EXIT_SERVER_IP:443"
+if ! probe_tcp "$EXIT_SERVER_IP" 443; then
+  log_warn "cannot reach $EXIT_SERVER_IP:443 — check firewall / exit VM is up before trusting this deploy"
 else
-  log_ok "Netherlands VM is reachable"
+  log_ok "Exit VM is reachable"
 fi
 
 # Generate RU-side server secrets only if we don't already have them.
@@ -98,10 +98,10 @@ RU_SERVER_IP=$RU_SERVER_IP
 RU_REALITY_PRIVKEY=$RU_REALITY_PRIVKEY
 RU_REALITY_PUBKEY=$RU_REALITY_PUBKEY
 RU_SHORT_ID=$RU_SHORT_ID
-NL_SERVER_IP=$NL_SERVER_IP
-NL_REALITY_PUBKEY=$NL_REALITY_PUBKEY
-NL_USER_UUID=$NL_USER_UUID
-NL_SHORT_ID=$NL_SHORT_ID
+EXIT_SERVER_IP=$EXIT_SERVER_IP
+EXIT_REALITY_PUBKEY=$EXIT_REALITY_PUBKEY
+EXIT_USER_UUID=$EXIT_USER_UUID
+EXIT_SHORT_ID=$EXIT_SHORT_ID
 EOF
 chmod 600 "$HERE/.env"
 

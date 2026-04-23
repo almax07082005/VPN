@@ -8,7 +8,7 @@ client-config.txt
 
 # Rendered configs (regenerated from *.tmpl on every deploy / user-mgmt call)
 russia/config/config.json
-netherlands/config/config.json
+exit/config/config.json
 
 # Per-user records (UUIDs live here — treat as secrets)
 russia/users/*.json
@@ -16,7 +16,7 @@ russia/users/*.json
 
 # sing-box runtime state (cached rule-sets, logs)
 russia/cache/
-netherlands/cache/
+exit/cache/
 
 # OS / editor cruft
 .DS_Store

@@ -12,7 +12,7 @@ Everywhere: after scanning, **pick the new profile and tap Connect.** There is n
 4. The new profile appears in the list. Tap it, then tap the big **Connect** button.
 5. iOS will ask permission to install a VPN profile — approve it once.
 
-Verify: open Safari → visit `https://ifconfig.me` → should show the **Netherlands** IP. Then visit `https://2ip.ru` → should show the **Russia** IP.
+Verify: open Safari → visit `https://ifconfig.me` → should show the **exit** IP. Then visit `https://2ip.ru` → should show the **Russia** IP.
 
 ## Android
 
@@ -45,9 +45,9 @@ The QR encodes a profile name like `vpn2vpn-<user>` (e.g. `vpn2vpn-admin`). You 
 
 | Symptom | Check |
 |---|---|
-| Hiddify "connects" but nothing loads | `ifconfig.me` returns neither RU nor NL IP → sing-box on RU is down. SSH in and `docker compose ps` / `docker compose logs`. |
+| Hiddify "connects" but nothing loads | `ifconfig.me` returns neither RU nor exit IP → sing-box on RU is down. SSH in and `docker compose ps` / `docker compose logs`. |
 | YouTube loads, VK complains about foreign IP | Russia-direct routing broke. Check `docker compose logs sing-box` on the RU VM for `rule_set` download errors. |
-| VK loads, YouTube fails | Netherlands leg is down. SSH to NL VM, check `docker compose ps`. Also test `nc -zv <NL_IP> 443` from the RU VM. |
+| VK loads, YouTube fails | exit leg is down. SSH to the exit VM, check `docker compose ps`. Also test `nc -zv <EXIT_IP> 443` from the RU VM. |
 | Keeps disconnecting on mobile data | Some Russian ISPs throttle long-lived TLS flows. Switch SIM or try the `dl.google.com` covering site (edit `config.json.tmpl`, re-bootstrap). |
 | DPI blocked the SNI | Rotate covering site in both `config.json.tmpl` files. Keep the client URIs in sync — `www.microsoft.com` is in the QR too. |
 | Can't scan QR cleanly from SSH terminal | Run `./user.sh show <name>` and copy the `vless://` URI directly — Hiddify accepts pasted URIs on every platform. |

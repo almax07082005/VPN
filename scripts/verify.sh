@@ -7,8 +7,8 @@
 # bootstrap.sh / user.sh.
 #
 # Usage:
-#   bash scripts/verify.sh --ru-ip 1.2.3.4 --nl-ip 5.6.7.8 \
-#        [--ru-ssh root@ru.example] [--nl-ssh root@nl.example]
+#   bash scripts/verify.sh --ru-ip 1.2.3.4 --exit-ip 5.6.7.8 \
+#        [--ru-ssh root@ru.example] [--exit-ssh root@nl.example]
 
 set -euo pipefail
 
@@ -17,23 +17,23 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/common.sh"
 
 RU_IP=""
-NL_IP=""
+EXIT_IP=""
 RU_SSH=""
-NL_SSH=""
+EXIT_SSH=""
 
 while (($#)); do
   case "$1" in
     --ru-ip)   RU_IP="$2";  shift 2;;
-    --nl-ip)   NL_IP="$2";  shift 2;;
+    --exit-ip)   EXIT_IP="$2";  shift 2;;
     --ru-ssh)  RU_SSH="$2"; shift 2;;
-    --nl-ssh)  NL_SSH="$2"; shift 2;;
+    --exit-ssh)  EXIT_SSH="$2"; shift 2;;
     -h|--help)
       sed -n '3,12p' "$0"; exit 0;;
     *) log_err "unknown arg: $1"; exit 1;;
   esac
 done
 
-[[ -n $RU_IP && -n $NL_IP ]] || die "--ru-ip and --nl-ip are required"
+[[ -n $RU_IP && -n $EXIT_IP ]] || die "--ru-ip and --exit-ip are required"
 
 PASS=0
 FAIL=0
@@ -50,7 +50,7 @@ check() {
 echo
 log_info "--- port reachability ---"
 check "RU :443 open" probe_tcp "$RU_IP" 443
-check "NL :443 open" probe_tcp "$NL_IP" 443
+check "Exit :443 open" probe_tcp "$EXIT_IP" 443
 
 # --- 2. SSH + container liveness ------------------------------------------
 if [[ -n $RU_SSH ]]; then
@@ -61,11 +61,11 @@ if [[ -n $RU_SSH ]]; then
              'docker compose -f /root/vpn/russia/docker-compose.yml ps --status running | grep -q sing-box \
               || docker ps --filter name=sing-box --filter status=running --format {{.Names}} | grep -q sing-box'"
 fi
-if [[ -n $NL_SSH ]]; then
+if [[ -n $EXIT_SSH ]]; then
   echo
-  log_info "--- Netherlands VM container liveness ---"
-  check "NL sing-box running" \
-    bash -c "ssh -o StrictHostKeyChecking=accept-new -n '$NL_SSH' \
+  log_info "--- Exit VM container liveness ---"
+  check "Exit sing-box running" \
+    bash -c "ssh -o StrictHostKeyChecking=accept-new -n '$EXIT_SSH' \
              'docker ps --filter name=sing-box --filter status=running --format {{.Names}} | grep -q sing-box'"
 fi
 
@@ -82,13 +82,13 @@ if [[ -z $EGRESS_IP ]]; then
   log_err "could not reach api.ipify.org — tunnel may be down"
   ((FAIL++))
 else
-  if [[ $EGRESS_IP == "$NL_IP" ]]; then
-    log_ok "general egress IP = $EGRESS_IP (matches NL — correct)"; ((PASS++))
+  if [[ $EGRESS_IP == "$EXIT_IP" ]]; then
+    log_ok "general egress IP = $EGRESS_IP (matches exit — correct)"; ((PASS++))
   elif [[ $EGRESS_IP == "$RU_IP" ]]; then
-    log_err "general egress IP = $EGRESS_IP (matches RU — routing is NOT forwarding to NL)"
+    log_err "general egress IP = $EGRESS_IP (matches RU — routing is NOT forwarding to exit)"
     ((FAIL++))
   else
-    log_warn "general egress IP = $EGRESS_IP (neither RU nor NL — tunnel may be disconnected)"
+    log_warn "general egress IP = $EGRESS_IP (neither RU nor exit — tunnel may be disconnected)"
     ((FAIL++))
   fi
 fi
@@ -111,7 +111,7 @@ fi
 cat <<EOF
 
 Manual checks to run in a browser (tunnel still connected):
-  • https://ifconfig.me           — expect NL IP
+  • https://ifconfig.me           — expect exit IP
   • https://2ip.ru                — expect RU IP
   • https://dnsleaktest.com       — expect only Cloudflare/Yandex resolvers
   • https://youtube.com           — should play

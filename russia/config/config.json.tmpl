@@ -6,7 +6,7 @@
   "dns": {
     "servers": [
       { "tag": "dns_ru",     "address": "77.88.8.8",                 "detour": "direct"        },
-      { "tag": "dns_remote", "address": "https://1.1.1.1/dns-query", "detour": "to-netherlands" }
+      { "tag": "dns_remote", "address": "https://1.1.1.1/dns-query", "detour": "to-exit" }
     ],
     "rules": [
       { "rule_set": ["geosite-category-ru"], "server": "dns_ru" }
@@ -43,10 +43,10 @@
     { "type": "direct", "tag": "direct" },
     {
       "type": "vless",
-      "tag": "to-netherlands",
-      "server": "${NL_SERVER_IP}",
+      "tag": "to-exit",
+      "server": "${EXIT_SERVER_IP}",
       "server_port": 443,
-      "uuid": "${NL_USER_UUID}",
+      "uuid": "${EXIT_USER_UUID}",
       "flow": "xtls-rprx-vision",
       "tls": {
         "enabled": true,
@@ -57,8 +57,8 @@
         },
         "reality": {
           "enabled": true,
-          "public_key": "${NL_REALITY_PUBKEY}",
-          "short_id": "${NL_SHORT_ID}"
+          "public_key": "${EXIT_REALITY_PUBKEY}",
+          "short_id": "${EXIT_SHORT_ID}"
         }
       }
     },
@@ -72,7 +72,7 @@
         "tag": "geosite-category-ru",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
-        "download_detour": "to-netherlands",
+        "download_detour": "to-exit",
         "update_interval": "24h0m0s"
       }
     ],
@@ -81,7 +81,7 @@
       { "ip_is_private": true, "outbound": "direct"  },
       { "rule_set": ["geosite-category-ru"], "outbound": "direct" }
     ],
-    "final": "to-netherlands",
+    "final": "to-exit",
     "auto_detect_interface": true
   }
 }
