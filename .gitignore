@@ -1,0 +1,25 @@
+# Secrets & generated state — never commit
+.env
+**/.env
+deployment-info.txt
+**/deployment-info.txt
+client-config.txt
+**/client-config.txt
+
+# Rendered configs (regenerated from *.tmpl on every deploy / user-mgmt call)
+russia/config/config.json
+netherlands/config/config.json
+
+# Per-user records (UUIDs live here — treat as secrets)
+russia/users/*.json
+!russia/users/.gitkeep
+
+# sing-box runtime state (cached rule-sets, logs)
+russia/cache/
+netherlands/cache/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/

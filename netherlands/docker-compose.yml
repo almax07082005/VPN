@@ -1,0 +1,15 @@
+services:
+  sing-box:
+    image: ghcr.io/sagernet/sing-box:v1.10.3
+    container_name: sing-box
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config:/etc/sing-box:ro
+      - ./cache:/var/lib/sing-box
+    command: ["run", "-D", "/var/lib/sing-box", "-c", "/etc/sing-box/config.json"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
