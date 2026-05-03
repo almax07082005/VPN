@@ -22,7 +22,10 @@ public class BroadcastService {
     private final BotProperties props;
 
     public BroadcastResult sendToAllApproved(String text) {
-        List<BotUser> users = userService.listApproved();
+        return sendTo(userService.listApproved(), text);
+    }
+
+    public BroadcastResult sendTo(List<BotUser> users, String text) {
         int sent = 0, failed = 0;
         for (BotUser u : users) {
             try {

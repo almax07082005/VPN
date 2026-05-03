@@ -81,6 +81,12 @@ public class UserService {
         return repo.findAllByStatus(UserStatus.APPROVED);
     }
 
+    @Transactional(readOnly = true)
+    public List<BotUser> findByIds(List<Long> localIds) {
+        if (localIds == null || localIds.isEmpty()) return List.of();
+        return repo.findAllByIdInOrderByIdAsc(localIds);
+    }
+
     private BotUser require(long localId) {
         return repo.findById(localId)
                 .orElseThrow(() -> new NoSuchElementException("User #" + localId + " not found"));

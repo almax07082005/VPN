@@ -26,6 +26,7 @@ public class BotLifecycle {
         BaseResponse resp = bot.execute(new SetMyCommands(
                 new BotCommand("start", "Request access"),
                 new BotCommand("send", "Broadcast a message (admin)"),
+                new BotCommand("sendto", "Send a message to specific user ids (admin)"),
                 new BotCommand("admin", "Admin tools (admin)")
         ));
         if (!resp.isOk()) {

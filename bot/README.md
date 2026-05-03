@@ -24,7 +24,7 @@ docker compose logs -f vpn-bot
 
 ## Admin commands
 
-All `/admin` and `/send` commands are silently ignored unless the sender's Telegram user id matches `ADMIN_TG_ID`. `/start` from the admin's own account just prints a hint.
+All `/admin`, `/send`, and `/sendto` commands are silently ignored unless the sender's Telegram user id matches `ADMIN_TG_ID`. `/start` from the admin's own account just prints a hint.
 
 ```
 /admin approve <id> <alias>   approve a pending user (alias is required)
@@ -32,6 +32,7 @@ All `/admin` and `/send` commands are silently ignored unless the sender's Teleg
 /admin remove <id>            hard-delete a user row (they can re-register fresh)
 /admin list                   list all users: <id> | <alias> | @<username> | tg:<tg_id> | <status>
 /send <text>                  broadcast text to every APPROVED user
+/sendto <id1>,<id2>,... <text>  send text to the listed users (any status); unknown ids are reported back
 ```
 
 The `<id>` in admin commands is the bot's local sequential id from `bot_user.id`, not the Telegram user id. Use `/admin list` to see it. The admin notification DM on `/start` already includes the right id pre-filled into the command templates.
@@ -66,7 +67,7 @@ bot/
         │   ├── BotLifecycle.java  # SetMyCommands + setUpdatesListener on ApplicationReadyEvent
         │   ├── UpdateRouter.java  # picks the first UpdateHandler whose supports() returns true
         │   ├── AdminGuard.java    # isAdmin(msg) check against ADMIN_TG_ID
-        │   └── handlers/          # /start, /admin, /send
+        │   └── handlers/          # /start, /admin, /send, /sendto
         ├── user/                  # BotUser entity, UserStatus, UserService, UserRepository
         ├── broadcast/             # BroadcastService + BroadcastResult
         └── notify/                # AdminNotifier — DMs the admin on new pending, DMs user on approval
