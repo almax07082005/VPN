@@ -1,0 +1,65 @@
+# vpn-bot: broadcast-only Telegram bot. Runs on the Russia VM next to vpn-russia.
+# Separate stack, separate network. Operator creates bot/.env first.
+
+services:
+  vpn-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vpn-bot:local
+    container_name: vpn-bot
+    restart: unless-stopped
+    depends_on:
+      vpn-bot-postgres:
+        condition: service_healthy
+    networks: [vpn-bot-net]
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN must be set in bot/.env}
+      - ADMIN_TG_ID=${ADMIN_TG_ID:?ADMIN_TG_ID must be set in bot/.env}
+      - DB_HOST=vpn-bot-postgres
+      - DB_NAME=vpnbot
+      - DB_USER=vpnbot
+      - DB_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in bot/.env}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  vpn-bot-postgres:
+    image: postgres:16-alpine
+    container_name: vpn-bot-postgres
+    restart: unless-stopped
+    networks: [vpn-bot-net]
+    ports:
+      - "5433:5432"   # host:5433 -> container:5432, all interfaces
+    environment:
+      - POSTGRES_DB=vpnbot
+      - POSTGRES_USER=vpnbot
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in bot/.env}
+    volumes:
+      - vpn-bot-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vpnbot -d vpnbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  vpn-bot-net:
+    name: vpn-bot-net
+
+volumes:
+  vpn-bot-postgres-data:
+    name: vpn-bot-postgres-data

@@ -1,0 +1,9 @@
+.gradle/
+build/
+.idea/
+*.iml
+HELP.md
+.env
+.env.example
+README.md
+src/test/
