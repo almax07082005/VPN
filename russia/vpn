@@ -10,17 +10,23 @@
 #   vpn rotate  <name>
 #   vpn init-admin [<name>]   # called by entrypoint on first boot
 #
-#   vpn russia add    <domain>      # always egress directly from RU
+#   vpn russia add    <domain>             # always egress directly from RU
+#   vpn russia add    --regex <pattern>    # regex variant (Go RE2 syntax)
 #   vpn russia remove <domain>
+#   vpn russia remove --regex <pattern>
 #   vpn russia list
-#   vpn exit   add    <domain>      # always egress via the exit VM
+#   vpn exit   add    <domain>             # always egress via the exit VM
+#   vpn exit   add    --regex <pattern>
 #   vpn exit   remove <domain>
+#   vpn exit   remove --regex <pattern>
 #   vpn exit   list
 #
 # State on disk (inside the named volume):
-#   /var/lib/vpn/users/<name>.json   — one file per user
-#   /var/lib/vpn/domains/russia.txt  — one domain per line (RU-direct override)
-#   /var/lib/vpn/domains/exit.txt    — one domain per line (exit override)
+#   /var/lib/vpn/users/<name>.json         — one file per user
+#   /var/lib/vpn/domains/russia.txt        — suffix entries (RU-direct override)
+#   /var/lib/vpn/domains/russia-regex.txt  — regex entries (RU-direct override)
+#   /var/lib/vpn/domains/exit.txt          — suffix entries (exit override)
+#   /var/lib/vpn/domains/exit-regex.txt    — regex entries (exit override)
 
 set -euo pipefail
 
@@ -45,11 +51,15 @@ Usage:
     vpn rotate      <name>
 
   Per-domain routing overrides (take precedence over the geosite default):
-    vpn russia add    <domain>      # this domain always egresses directly from RU
+    vpn russia add    <domain>             # bare domain → suffix match
+    vpn russia add    --regex <pattern>    # regex match (Go RE2 syntax)
     vpn russia remove <domain>
+    vpn russia remove --regex <pattern>
     vpn russia list
-    vpn exit   add    <domain>      # this domain always egresses via the exit VM
+    vpn exit   add    <domain>
+    vpn exit   add    --regex <pattern>
     vpn exit   remove <domain>
+    vpn exit   remove --regex <pattern>
     vpn exit   list
 
   Internal:
@@ -91,12 +101,20 @@ _build_users_json() {
   jq -cs 'map({name, uuid, flow: "xtls-rprx-vision"})' "${files[@]}"
 }
 
-_list_file() { printf '%s/%s.txt' "$DOMAINS_DIR" "$1"; }
+# _list_file <list> [<mode>]   list ∈ {russia, exit}, mode ∈ {suffix, regex} (default suffix)
+_list_file() {
+  local list="$1" mode="${2:-suffix}"
+  case "$mode" in
+    suffix) printf '%s/%s.txt'       "$DOMAINS_DIR" "$list";;
+    regex)  printf '%s/%s-regex.txt' "$DOMAINS_DIR" "$list";;
+    *)      die "internal: bad mode '$mode'";;
+  esac
+}
 
-# Read a domain list file as a JSON array of strings (deduped, sorted, lowercased).
+# Read a suffix list file as a JSON array of strings (deduped, lowercased).
 _build_domains_json() {
   local list="$1" file
-  file="$(_list_file "$list")"
+  file="$(_list_file "$list" suffix)"
   if [[ ! -f $file ]]; then
     printf '[]'
     return
@@ -104,6 +122,23 @@ _build_domains_json() {
   jq -R -s -c '
     split("\n")
     | map(ascii_downcase | gsub("^\\s+|\\s+$"; ""))
+    | map(select(length > 0))
+    | unique
+  ' "$file"
+}
+
+# Read a regex list file as a JSON array of strings (deduped, NOT lowercased —
+# regex patterns are case-sensitive by intent; user can opt in via (?i)).
+_build_regex_json() {
+  local list="$1" file
+  file="$(_list_file "$list" regex)"
+  if [[ ! -f $file ]]; then
+    printf '[]'
+    return
+  fi
+  jq -R -s -c '
+    split("\n")
+    | map(gsub("^\\s+|\\s+$"; ""))
     | map(select(length > 0))
     | unique
   ' "$file"
@@ -118,50 +153,82 @@ _build_domains_json() {
 render_config() {
   require_cmd envsubst
   require_cmd jq
-  local users_json ru_domains exit_domains
+  require_cmd sing-box
+  local users_json ru_domains exit_domains ru_regex exit_regex
   users_json="$(_build_users_json)"
   ru_domains="$(_build_domains_json russia)"
   exit_domains="$(_build_domains_json exit)"
+  ru_regex="$(_build_regex_json russia)"
+  exit_regex="$(_build_regex_json exit)"
 
   mkdir -p "$(dirname "$CONFIG_OUT")"
   RU_USERS_JSON="$users_json" \
     envsubst '${RU_USERS_JSON} ${RU_REALITY_PRIVKEY} ${RU_SHORT_ID} ${EXIT_SERVER_IP} ${EXIT_REALITY_PUBKEY} ${EXIT_USER_UUID} ${EXIT_SHORT_ID}' \
     < "$CONFIG_TMPL" > "$CONFIG_OUT.tmp"
 
+  # Suffix rules: longest-first within the combined RU+exit set so the most
+  # specific suffix wins. Regex rules: appended after suffix, in user-add order
+  # (russia first, then exit) — sing-box has no notion of "longest regex".
   jq \
     --argjson ru_domains   "$ru_domains" \
     --argjson exit_domains "$exit_domains" \
+    --argjson ru_regex     "$ru_regex" \
+    --argjson exit_regex   "$exit_regex" \
     '
-    def domain_route_rules:
+    def suffix_route_rules:
       ( ($ru_domains   | map({domain: ., outbound: "direct"})) +
         ($exit_domains | map({domain: ., outbound: "to-exit"})) )
       | sort_by(.domain | length) | reverse
       | map({domain_suffix: [.domain], outbound: .outbound});
-    def domain_dns_rules:
+    def suffix_dns_rules:
       ( ($ru_domains   | map({domain: ., server: "dns_ru"})) +
         ($exit_domains | map({domain: ., server: "dns_remote"})) )
       | sort_by(.domain | length) | reverse
       | map({domain_suffix: [.domain], server: .server});
+    def regex_route_rules:
+      ($ru_regex   | map({domain_regex: [.], outbound: "direct"})) +
+      ($exit_regex | map({domain_regex: [.], outbound: "to-exit"}));
+    def regex_dns_rules:
+      ($ru_regex   | map({domain_regex: [.], server: "dns_ru"})) +
+      ($exit_regex | map({domain_regex: [.], server: "dns_remote"}));
 
-    .dns.rules = (domain_dns_rules + .dns.rules)
+    .dns.rules = (suffix_dns_rules + regex_dns_rules + .dns.rules)
     | .route.rules = (
         (.route.rules | map(has("rule_set")) | index(true)) as $idx
         | if $idx == null
-          then .route.rules + domain_route_rules
-          else .route.rules[:$idx] + domain_route_rules + .route.rules[$idx:]
+          then .route.rules + suffix_route_rules + regex_route_rules
+          else .route.rules[:$idx] + suffix_route_rules + regex_route_rules + .route.rules[$idx:]
           end
       )
     ' "$CONFIG_OUT.tmp" > "$CONFIG_OUT.tmp2"
   rm -f "$CONFIG_OUT.tmp"
 
-  jq empty "$CONFIG_OUT.tmp2"
+  jq empty "$CONFIG_OUT.tmp2" 2>/dev/null || {
+    log_err "rendered config is not valid JSON"
+    rm -f "$CONFIG_OUT.tmp2"
+    return 1
+  }
+
+  # Authoritative validation: ask sing-box itself if it can load this config.
+  # Catches anything the per-list bash validators miss (bad regex, schema
+  # drift, etc.) before we swap it in. Live config stays untouched on failure.
+  local sb_err=""
+  sb_err=$(sing-box check -c "$CONFIG_OUT.tmp2" 2>&1) || {
+    log_err "sing-box rejected the rendered config:"
+    printf '%s\n' "$sb_err" | sed 's/^/  /' >&2
+    rm -f "$CONFIG_OUT.tmp2"
+    return 1
+  }
+
   mv "$CONFIG_OUT.tmp2" "$CONFIG_OUT"
   chmod 600 "$CONFIG_OUT"
+  return 0
 }
 
 # Re-render + signal the PID-1 supervisor to restart sing-box.
+# Returns 0 on success, non-zero if render fails (live config left untouched).
 _apply() {
-  render_config
+  render_config || return 1
   if [[ -f /proc/1/comm ]] && grep -qx 'vpn-supervisor\|bash' /proc/1/comm 2>/dev/null; then
     reload_sing_box
     log_ok "sing-box reloaded"
@@ -293,56 +360,168 @@ _other_list() {
   case "$1" in russia) echo exit;; exit) echo russia;; esac
 }
 
-cmd_route_add() {
+# Snapshot the contents of $1 (if it exists) into $1.snap. Idempotent.
+_snap() {
+  local file="$1" snap="$1.snap"
+  rm -f "$snap"
+  [[ -f $file ]] && cp "$file" "$snap"
+  return 0
+}
+
+# Restore $1 from $1.snap if the snapshot exists; otherwise delete $1
+# (snapshot-not-existing means $1 didn't exist at snapshot time).
+_restore_snap() {
+  local file="$1" snap="$1.snap"
+  if [[ -f $snap ]]; then
+    mv "$snap" "$file"
+  else
+    rm -f "$file"
+  fi
+}
+
+_clear_snap() { rm -f "$1.snap"; }
+
+# Run _apply with snapshot-rollback for $1. If render fails, $1 is restored
+# to its pre-mutation state and we die with a clear message.
+_apply_or_rollback() {
+  local file="$1" what="$2"
+  if _apply; then
+    _clear_snap "$file"
+    return 0
+  fi
+  _restore_snap "$file"
+  die "rolled back $what: rendered config was rejected (see error above)"
+}
+
+cmd_route_add_suffix() {
   local list="$1" raw="$2" domain
   domain="$(_normalize_domain "$raw")"
   _valid_domain "$domain"
 
   mkdir -p "$DOMAINS_DIR"
   local file other other_file
-  file="$(_list_file "$list")"
+  file="$(_list_file "$list" suffix)"
   other="$(_other_list "$list")"
-  other_file="$(_list_file "$other")"
+  other_file="$(_list_file "$other" suffix)"
 
   if [[ -f $other_file ]] && grep -qxF "$domain" "$other_file"; then
-    die "$domain is already in the '$other' list — run 'vpn $other remove $domain' first"
+    die "$domain is already in the '$other' suffix list — run 'vpn $other remove $domain' first"
   fi
   if [[ -f $file ]] && grep -qxF "$domain" "$file"; then
-    log_warn "$domain is already in the '$list' list — nothing to do"
+    log_warn "$domain is already in the '$list' suffix list — nothing to do"
     return 0
   fi
 
+  _snap "$file"
   printf '%s\n' "$domain" >> "$file"
   chmod 600 "$file"
-  _apply
-  log_ok "added '$domain' to the '$list' list"
+  _apply_or_rollback "$file" "add of suffix '$domain' to '$list'"
+  log_ok "added suffix '$domain' to the '$list' list"
 }
 
-cmd_route_remove() {
+cmd_route_add_regex() {
+  local list="$1" pattern="$2"
+  [[ -n $pattern ]] || die "regex pattern is empty"
+
+  mkdir -p "$DOMAINS_DIR"
+  local file other other_file
+  file="$(_list_file "$list" regex)"
+  other="$(_other_list "$list")"
+  other_file="$(_list_file "$other" regex)"
+
+  if [[ -f $other_file ]] && grep -qxF -- "$pattern" "$other_file"; then
+    die "regex is already in the '$other' regex list — run 'vpn $other remove --regex …' first"
+  fi
+  if [[ -f $file ]] && grep -qxF -- "$pattern" "$file"; then
+    log_warn "regex is already in the '$list' regex list — nothing to do"
+    return 0
+  fi
+
+  _snap "$file"
+  printf '%s\n' "$pattern" >> "$file"
+  chmod 600 "$file"
+  _apply_or_rollback "$file" "add of regex /$pattern/ to '$list'"
+  log_ok "added regex /$pattern/ to the '$list' list"
+}
+
+cmd_route_remove_suffix() {
   local list="$1" raw="$2" domain
   domain="$(_normalize_domain "$raw")"
   _valid_domain "$domain"
 
-  local file; file="$(_list_file "$list")"
+  local file; file="$(_list_file "$list" suffix)"
   if [[ ! -f $file ]] || ! grep -qxF "$domain" "$file"; then
-    die "$domain is not in the '$list' list"
+    die "$domain is not in the '$list' suffix list"
   fi
 
+  _snap "$file"
   grep -vxF "$domain" "$file" > "$file.tmp" || true
   mv "$file.tmp" "$file"
   chmod 600 "$file"
-  _apply
-  log_ok "removed '$domain' from the '$list' list"
+  _apply_or_rollback "$file" "remove of suffix '$domain' from '$list'"
+  log_ok "removed suffix '$domain' from the '$list' list"
+}
+
+cmd_route_remove_regex() {
+  local list="$1" pattern="$2"
+  [[ -n $pattern ]] || die "regex pattern is empty"
+
+  local file; file="$(_list_file "$list" regex)"
+  if [[ ! -f $file ]] || ! grep -qxF -- "$pattern" "$file"; then
+    die "regex /$pattern/ is not in the '$list' regex list"
+  fi
+
+  _snap "$file"
+  grep -vxF -- "$pattern" "$file" > "$file.tmp" || true
+  mv "$file.tmp" "$file"
+  chmod 600 "$file"
+  _apply_or_rollback "$file" "remove of regex /$pattern/ from '$list'"
+  log_ok "removed regex /$pattern/ from the '$list' list"
 }
 
 cmd_route_list() {
-  local list="$1" file
-  file="$(_list_file "$list")"
-  if [[ ! -f $file ]] || [[ ! -s $file ]]; then
-    echo "(no domains in '$list' list yet — run: vpn $list add <domain>)"
-    return
+  local list="$1" suffix_file regex_file printed_anything=0
+  suffix_file="$(_list_file "$list" suffix)"
+  regex_file="$(_list_file "$list" regex)"
+
+  if [[ -s $suffix_file ]]; then
+    echo "[$list — suffix]"
+    sort -u "$suffix_file" | sed 's/^/  /'
+    printed_anything=1
   fi
-  sort -u "$file"
+  if [[ -s $regex_file ]]; then
+    [[ $printed_anything -eq 1 ]] && echo
+    echo "[$list — regex]"
+    sort -u "$regex_file" | sed 's/^/  /'
+    printed_anything=1
+  fi
+  if [[ $printed_anything -eq 0 ]]; then
+    echo "(no entries in '$list' list yet — run: vpn $list add <domain>  or  vpn $list add --regex <pattern>)"
+  fi
+}
+
+# Parse `[--regex] <value>` and dispatch to the suffix/regex handler.
+_parse_and_dispatch() {
+  local list="$1" action="$2"; shift 2
+  local mode=suffix value=""
+  while (($#)); do
+    case "$1" in
+      --regex)
+        mode=regex
+        [[ $# -ge 2 ]] || die "--regex requires a pattern"
+        value="$2"; shift 2;;
+      --) shift; value="${1:-}"; shift || true;;
+      -*) die "unknown flag for '$list $action': $1";;
+      *)  value="$1"; shift;;
+    esac
+  done
+  [[ -n $value ]] || die "missing value for 'vpn $list $action'"
+  case "$action:$mode" in
+    add:suffix)    cmd_route_add_suffix    "$list" "$value";;
+    add:regex)     cmd_route_add_regex     "$list" "$value";;
+    remove:suffix) cmd_route_remove_suffix "$list" "$value";;
+    remove:regex)  cmd_route_remove_regex  "$list" "$value";;
+  esac
 }
 
 cmd_route_dispatch() {
@@ -350,9 +529,8 @@ cmd_route_dispatch() {
   (($# >= 1)) || usage
   local action="$1"; shift
   case "$action" in
-    add)    (($# == 1)) || usage; cmd_route_add    "$list" "$1";;
-    remove) (($# == 1)) || usage; cmd_route_remove "$list" "$1";;
-    list)   (($# == 0)) || usage; cmd_route_list   "$list";;
+    add|remove) _parse_and_dispatch "$list" "$action" "$@";;
+    list)       (($# == 0)) || usage; cmd_route_list "$list";;
     *) die "unknown action for '$list': $action (expected: add|remove|list)";;
   esac
 }
@@ -371,7 +549,7 @@ cmd_init_admin() {
     '{name:$n, uuid:$u, created_at:$c, note:$note}' \
     > "$(_user_file "$name")"
   chmod 600 "$(_user_file "$name")"
-  render_config
+  render_config || die "first-boot config render failed"
   log_ok "initial user '$name' created"
   _print_client "$name"
 }
@@ -388,7 +566,7 @@ main() {
     rotate)      (($# == 1)) || usage; cmd_rotate     "$1";;
     russia|exit) cmd_route_dispatch "$sub" "$@";;
     init-admin)  cmd_init_admin "$@";;
-    render)      render_config;;   # internal: used by entrypoint
+    render)      render_config || die "config render failed";;   # internal: used by entrypoint
     -h|--help)   usage;;
     *) log_err "unknown subcommand: $sub"; usage;;
   esac

@@ -9,15 +9,20 @@ A two-hop VPN for users in Russia. A single connection that:
 The routing decision is made **server-side per connection** from the sniffed hostname — clients don't need to configure anything.
 
 ```
-  Client ──VLESS+Reality──▶  entry VM (Russia)  ──▶ direct egress       ──▶ ozon.ru, vk.com, госуслуги.рф
-  (Streisand /                    │                                          (destination sees RU IP)
-   Hiddify)                       │
-                                  └── geosite match? ──no──▶ exit VM (abroad) ──▶ youtube.com, github.com, …
-                                                                                   (destination sees exit IP)
+  Client ──VLESS+Reality──▶  entry VM (Russia)
+  (Streisand /                    │
+   Hiddify)                       │   per-connection lookup on sniffed SNI/Host (first match wins):
+                                  │
+                                  ├─ ① in user "russia" whitelist  ──▶ direct egress    ──▶ <forced-RU domain>
+                                  ├─ ② in user "exit"   whitelist  ──▶ exit VM (abroad) ──▶ <forced-foreign domain>
+                                  ├─ ③ matches geosite-category-ru ──▶ direct egress    ──▶ ozon.ru, vk.com, госуслуги.рф
+                                  └─ ④ otherwise (default)         ──▶ exit VM (abroad) ──▶ youtube.com, github.com, …
+
+                                                                       (destination sees RU IP for ①③, exit IP for ②④)
 ```
 
 - Entry hop: **VLESS + Reality + Vision** — looks like a TLS handshake to `www.microsoft.com`.
-- Russia VM sniffs SNI/Host, matches it against `geosite:category-ru`, and either egresses direct or forwards to the exit VM over another VLESS+Reality tunnel.
+- Russia VM sniffs SNI/Host and routes per the priority chain above. Layers ① and ② are user-managed whitelists kept in the named volume — see [Per-domain routing overrides](#per-domain-routing-overrides) for the CLI. Layer ③ is the auto-updating `geosite:category-ru` rule-set (refreshes every 24h). Layer ④ is the default — if nothing matched, the connection exits abroad over a second VLESS+Reality tunnel.
 - **No `geoip-ru` rule.** Matching is domain-only, so foreign services that happen to be hosted on Russian IPs still exit abroad (safer given how fast the RU block-list changes).
 
 ## Repository layout
@@ -168,6 +173,7 @@ There is **no admin-vs-normal-user distinction** — every entry gets the same r
 The default routing matches against the auto-updating `geosite:category-ru` list — anything in it goes RU-direct, everything else goes through the exit. For domains where you want the opposite of the default (a foreign domain that should egress from RU, or an RU domain you want to reach from a foreign IP), keep two per-deploy override lists:
 
 ```bash
+# Suffix mode — the common case. Bare domain matches the FQDN and any subdomain.
 docker compose exec vpn-russia vpn russia add  some-bank.ru     # always RU-direct, even if not in geosite
 docker compose exec vpn-russia vpn russia list
 docker compose exec vpn-russia vpn russia remove some-bank.ru
@@ -175,15 +181,22 @@ docker compose exec vpn-russia vpn russia remove some-bank.ru
 docker compose exec vpn-russia vpn exit   add  vk.com           # always via the exit, even though geosite says RU-direct
 docker compose exec vpn-russia vpn exit   list
 docker compose exec vpn-russia vpn exit   remove vk.com
+
+# Regex mode — when one suffix isn't enough (e.g. same brand across many TLDs).
+# Pattern is Go RE2 syntax (no lookarounds); match is against the full FQDN.
+docker compose exec vpn-russia vpn russia add    --regex '(^|\.)sex-studentki\.[a-z]+$'
+docker compose exec vpn-russia vpn russia remove --regex '(^|\.)sex-studentki\.[a-z]+$'
 ```
 
 Notes:
 
-- Match is **suffix-based** — adding `example.com` covers `example.com`, `www.example.com`, `mail.example.com`, etc.
-- Override rules sit **before** the geosite rule, so a user-added domain wins over the default. A more specific suffix wins over a less specific one (rules are emitted longest-first).
-- A domain can only live in **one** list at a time — `vpn russia add x.com` will refuse if `x.com` is already in the exit list (and vice versa). Remove from the other list first.
-- Both lists also drive DNS: russia-list domains resolve via the Russian resolver (`77.88.8.8`), exit-list domains resolve via Cloudflare DoH through the exit hop. No DNS leaks.
-- State lives in the named volume at `/var/lib/vpn/domains/{russia,exit}.txt` (one domain per line). Each command re-renders the sing-box config and reloads (~200 ms), same as user management.
+- **Suffix match** — adding `example.com` covers `example.com`, `www.example.com`, `mail.example.com`, etc. A more specific suffix wins over a less specific one (rules are emitted longest-first).
+- **Regex match** — pattern is matched against the full FQDN, case-sensitive by default (use `(?i)` to opt into case-insensitive). Sing-box uses Go's `regexp` package (RE2-flavored): no backreferences, no lookarounds; everything else from the standard regex toolkit works.
+- **Order**: override rules sit **before** the geosite rule, so a user-added entry wins over the default. Within overrides: suffix rules first (longest-first), then regex rules (in user-add order).
+- **Mutex**: a value can only live in **one** list at a time — `vpn russia add x.com` is refused if `x.com` is already in the exit list, and vice versa for both modes. Remove from the other list first.
+- Both modes also drive DNS: russia entries resolve via the Russian resolver (`77.88.8.8`), exit entries resolve via Cloudflare DoH through the exit hop. No DNS leaks (your local network sees only Reality-wrapped traffic to `:443`).
+- State lives in the named volume at `/var/lib/vpn/domains/{russia,exit}{,-regex}.txt` (one entry per line). Each command re-renders the sing-box config and reloads (~200 ms), same as user management.
+- **Atomic + validated**: every `add`/`remove` runs `sing-box check` on the rendered config before swapping it in. If it's rejected (bad regex, schema drift, anything), the state file is rolled back and the live config is untouched — no crash loops from a typo.
 
 ## Configuration
 
