@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Manage VLESS+Reality users on the Russia entry hop (in-container CLI).
+# Manage VLESS+Reality users and per-domain routing on the Russia entry hop
+# (in-container CLI).
 #
 #   vpn add     <name> [--note "…"]
 #   vpn list
@@ -9,7 +10,17 @@
 #   vpn rotate  <name>
 #   vpn init-admin [<name>]   # called by entrypoint on first boot
 #
-# Source of truth: /var/lib/vpn/users/<name>.json — one file per user.
+#   vpn russia add    <domain>      # always egress directly from RU
+#   vpn russia remove <domain>
+#   vpn russia list
+#   vpn exit   add    <domain>      # always egress via the exit VM
+#   vpn exit   remove <domain>
+#   vpn exit   list
+#
+# State on disk (inside the named volume):
+#   /var/lib/vpn/users/<name>.json   — one file per user
+#   /var/lib/vpn/domains/russia.txt  — one domain per line (RU-direct override)
+#   /var/lib/vpn/domains/exit.txt    — one domain per line (exit override)
 
 set -euo pipefail
 
@@ -19,18 +30,30 @@ source /usr/local/lib/vpn/common.sh
 VPN_STATE="/var/lib/vpn"
 ENV_FILE="$VPN_STATE/.env"
 USERS_DIR="$VPN_STATE/users"
+DOMAINS_DIR="$VPN_STATE/domains"
 CONFIG_OUT="/etc/sing-box/config.json"
 CONFIG_TMPL="/etc/vpn/config.json.tmpl"
 
 usage() {
   cat <<EOF
 Usage:
-  vpn add         <name> [--note "…"]
-  vpn list
-  vpn show        <name>
-  vpn remove      <name>
-  vpn rotate      <name>
-  vpn init-admin  [<name>]
+  Users:
+    vpn add         <name> [--note "…"]
+    vpn list
+    vpn show        <name>
+    vpn remove      <name>
+    vpn rotate      <name>
+
+  Per-domain routing overrides (take precedence over the geosite default):
+    vpn russia add    <domain>      # this domain always egresses directly from RU
+    vpn russia remove <domain>
+    vpn russia list
+    vpn exit   add    <domain>      # this domain always egresses via the exit VM
+    vpn exit   remove <domain>
+    vpn exit   list
+
+  Internal:
+    vpn init-admin  [<name>]
 EOF
   exit 1
 }
@@ -68,18 +91,71 @@ _build_users_json() {
   jq -cs 'map({name, uuid, flow: "xtls-rprx-vision"})' "${files[@]}"
 }
 
-# Render /etc/sing-box/config.json from the template + current users.
+_list_file() { printf '%s/%s.txt' "$DOMAINS_DIR" "$1"; }
+
+# Read a domain list file as a JSON array of strings (deduped, sorted, lowercased).
+_build_domains_json() {
+  local list="$1" file
+  file="$(_list_file "$list")"
+  if [[ ! -f $file ]]; then
+    printf '[]'
+    return
+  fi
+  jq -R -s -c '
+    split("\n")
+    | map(ascii_downcase | gsub("^\\s+|\\s+$"; ""))
+    | map(select(length > 0))
+    | unique
+  ' "$file"
+}
+
+# Render /etc/sing-box/config.json from the template + current users + per-domain
+# routing overrides. envsubst pulls in the simple scalars and the user list;
+# jq then weaves the per-domain rules into route.rules and dns.rules just before
+# the geosite-category-ru rule (so user overrides win over the geosite default).
+# Each domain becomes its own rule, sorted by suffix length descending, so the
+# most specific match wins.
 render_config() {
   require_cmd envsubst
   require_cmd jq
-  local users_json
+  local users_json ru_domains exit_domains
   users_json="$(_build_users_json)"
+  ru_domains="$(_build_domains_json russia)"
+  exit_domains="$(_build_domains_json exit)"
+
   mkdir -p "$(dirname "$CONFIG_OUT")"
   RU_USERS_JSON="$users_json" \
     envsubst '${RU_USERS_JSON} ${RU_REALITY_PRIVKEY} ${RU_SHORT_ID} ${EXIT_SERVER_IP} ${EXIT_REALITY_PUBKEY} ${EXIT_USER_UUID} ${EXIT_SHORT_ID}' \
     < "$CONFIG_TMPL" > "$CONFIG_OUT.tmp"
-  jq empty "$CONFIG_OUT.tmp"
-  mv "$CONFIG_OUT.tmp" "$CONFIG_OUT"
+
+  jq \
+    --argjson ru_domains   "$ru_domains" \
+    --argjson exit_domains "$exit_domains" \
+    '
+    def domain_route_rules:
+      ( ($ru_domains   | map({domain: ., outbound: "direct"})) +
+        ($exit_domains | map({domain: ., outbound: "to-exit"})) )
+      | sort_by(.domain | length) | reverse
+      | map({domain_suffix: [.domain], outbound: .outbound});
+    def domain_dns_rules:
+      ( ($ru_domains   | map({domain: ., server: "dns_ru"})) +
+        ($exit_domains | map({domain: ., server: "dns_remote"})) )
+      | sort_by(.domain | length) | reverse
+      | map({domain_suffix: [.domain], server: .server});
+
+    .dns.rules = (domain_dns_rules + .dns.rules)
+    | .route.rules = (
+        (.route.rules | map(has("rule_set")) | index(true)) as $idx
+        | if $idx == null
+          then .route.rules + domain_route_rules
+          else .route.rules[:$idx] + domain_route_rules + .route.rules[$idx:]
+          end
+      )
+    ' "$CONFIG_OUT.tmp" > "$CONFIG_OUT.tmp2"
+  rm -f "$CONFIG_OUT.tmp"
+
+  jq empty "$CONFIG_OUT.tmp2"
+  mv "$CONFIG_OUT.tmp2" "$CONFIG_OUT"
   chmod 600 "$CONFIG_OUT"
 }
 
@@ -190,6 +266,97 @@ cmd_rotate() {
   _print_client "$name"
 }
 
+# --- Per-domain routing overrides -----------------------------------------
+
+# Normalize user-supplied input to a bare apex/sub domain suitable for
+# sing-box `domain_suffix` matching. Strips scheme, leading "*.", trailing
+# path/port, and lowercases.
+_normalize_domain() {
+  local d="$1"
+  d="$(printf '%s' "$d" | tr '[:upper:]' '[:lower:]')"
+  d="${d#http://}"
+  d="${d#https://}"
+  d="${d%%/*}"     # strip path
+  d="${d%%:*}"     # strip :port
+  d="${d#\*.}"     # strip wildcard prefix
+  while [[ ${d:0:1} == "." ]]; do d="${d:1}"; done   # leading dots
+  while [[ ${d: -1} == "." ]]; do d="${d%.}"; done   # trailing dots (FQDN form)
+  printf '%s' "$d"
+}
+
+_valid_domain() {
+  [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] \
+    || die "invalid domain: '$1' (expected something like example.com)"
+}
+
+_other_list() {
+  case "$1" in russia) echo exit;; exit) echo russia;; esac
+}
+
+cmd_route_add() {
+  local list="$1" raw="$2" domain
+  domain="$(_normalize_domain "$raw")"
+  _valid_domain "$domain"
+
+  mkdir -p "$DOMAINS_DIR"
+  local file other other_file
+  file="$(_list_file "$list")"
+  other="$(_other_list "$list")"
+  other_file="$(_list_file "$other")"
+
+  if [[ -f $other_file ]] && grep -qxF "$domain" "$other_file"; then
+    die "$domain is already in the '$other' list — run 'vpn $other remove $domain' first"
+  fi
+  if [[ -f $file ]] && grep -qxF "$domain" "$file"; then
+    log_warn "$domain is already in the '$list' list — nothing to do"
+    return 0
+  fi
+
+  printf '%s\n' "$domain" >> "$file"
+  chmod 600 "$file"
+  _apply
+  log_ok "added '$domain' to the '$list' list"
+}
+
+cmd_route_remove() {
+  local list="$1" raw="$2" domain
+  domain="$(_normalize_domain "$raw")"
+  _valid_domain "$domain"
+
+  local file; file="$(_list_file "$list")"
+  if [[ ! -f $file ]] || ! grep -qxF "$domain" "$file"; then
+    die "$domain is not in the '$list' list"
+  fi
+
+  grep -vxF "$domain" "$file" > "$file.tmp" || true
+  mv "$file.tmp" "$file"
+  chmod 600 "$file"
+  _apply
+  log_ok "removed '$domain' from the '$list' list"
+}
+
+cmd_route_list() {
+  local list="$1" file
+  file="$(_list_file "$list")"
+  if [[ ! -f $file ]] || [[ ! -s $file ]]; then
+    echo "(no domains in '$list' list yet — run: vpn $list add <domain>)"
+    return
+  fi
+  sort -u "$file"
+}
+
+cmd_route_dispatch() {
+  local list="$1"; shift
+  (($# >= 1)) || usage
+  local action="$1"; shift
+  case "$action" in
+    add)    (($# == 1)) || usage; cmd_route_add    "$list" "$1";;
+    remove) (($# == 1)) || usage; cmd_route_remove "$list" "$1";;
+    list)   (($# == 0)) || usage; cmd_route_list   "$list";;
+    *) die "unknown action for '$list': $action (expected: add|remove|list)";;
+  esac
+}
+
 # Called by the entrypoint on first boot (no existing .env from a previous run).
 # Renders the config with zero users, then creates the initial admin user.
 # Used before sing-box is launched, so no reload signal is sent.
@@ -219,6 +386,7 @@ main() {
     show)        (($# == 1)) || usage; cmd_show       "$1";;
     remove)      (($# == 1)) || usage; cmd_remove     "$1";;
     rotate)      (($# == 1)) || usage; cmd_rotate     "$1";;
+    russia|exit) cmd_route_dispatch "$sub" "$@";;
     init-admin)  cmd_init_admin "$@";;
     render)      render_config;;   # internal: used by entrypoint
     -h|--help)   usage;;

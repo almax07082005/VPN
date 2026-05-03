@@ -163,6 +163,28 @@ User files look like:
 
 There is **no admin-vs-normal-user distinction** — every entry gets the same routing, same bandwidth, same everything. Administrative control is who has shell access to the Russia VM.
 
+## Per-domain routing overrides
+
+The default routing matches against the auto-updating `geosite:category-ru` list — anything in it goes RU-direct, everything else goes through the exit. For domains where you want the opposite of the default (a foreign domain that should egress from RU, or an RU domain you want to reach from a foreign IP), keep two per-deploy override lists:
+
+```bash
+docker compose exec vpn-russia vpn russia add  some-bank.ru     # always RU-direct, even if not in geosite
+docker compose exec vpn-russia vpn russia list
+docker compose exec vpn-russia vpn russia remove some-bank.ru
+
+docker compose exec vpn-russia vpn exit   add  vk.com           # always via the exit, even though geosite says RU-direct
+docker compose exec vpn-russia vpn exit   list
+docker compose exec vpn-russia vpn exit   remove vk.com
+```
+
+Notes:
+
+- Match is **suffix-based** — adding `example.com` covers `example.com`, `www.example.com`, `mail.example.com`, etc.
+- Override rules sit **before** the geosite rule, so a user-added domain wins over the default. A more specific suffix wins over a less specific one (rules are emitted longest-first).
+- A domain can only live in **one** list at a time — `vpn russia add x.com` will refuse if `x.com` is already in the exit list (and vice versa). Remove from the other list first.
+- Both lists also drive DNS: russia-list domains resolve via the Russian resolver (`77.88.8.8`), exit-list domains resolve via Cloudflare DoH through the exit hop. No DNS leaks.
+- State lives in the named volume at `/var/lib/vpn/domains/{russia,exit}.txt` (one domain per line). Each command re-renders the sing-box config and reloads (~200 ms), same as user management.
+
 ## Configuration
 
 The most useful knobs live in the two config templates, which are baked into each image at build time:

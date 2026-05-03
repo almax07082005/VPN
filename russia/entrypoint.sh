@@ -25,7 +25,7 @@ source /usr/local/lib/vpn/common.sh
 VPN_STATE="/var/lib/vpn"
 ENV_FILE="$VPN_STATE/.env"
 
-mkdir -p "$VPN_STATE/users" "$VPN_STATE/cache"
+mkdir -p "$VPN_STATE/users" "$VPN_STATE/domains" "$VPN_STATE/cache"
 
 die_missing_exit_params() {
   cat >&2 <<EOF
