@@ -46,3 +46,5 @@ bot:
   token: ${BOT_TOKEN:?BOT_TOKEN must be set}
   admin-tg-id: ${ADMIN_TG_ID:?ADMIN_TG_ID must be set}
   broadcast-pacing-ms: 50
+  vpn:
+    command-timeout-ms: ${VPN_COMMAND_TIMEOUT_MS:30000}

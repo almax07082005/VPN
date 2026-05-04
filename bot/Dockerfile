@@ -8,7 +8,10 @@ COPY src /src/src
 RUN ./gradlew --no-daemon clean bootJar -x test
 
 FROM eclipse-temurin:21-jre AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# docker-cli is needed so the bot can `docker exec` into the vpn-russia
+# container to provision/rotate/revoke VPN users via the in-container `vpn` CLI.
+# The host's /var/run/docker.sock is mounted by compose.
+RUN apt-get update && apt-get install -y --no-install-recommends curl docker.io \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/build/libs/*.jar /app/app.jar

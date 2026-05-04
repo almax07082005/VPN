@@ -87,6 +87,11 @@ public class UserService {
         return repo.findAllByIdInOrderByIdAsc(localIds);
     }
 
+    @Transactional(readOnly = true)
+    public BotUser findRequired(long localId) {
+        return require(localId);
+    }
+
     private BotUser require(long localId) {
         return repo.findById(localId)
                 .orElseThrow(() -> new NoSuchElementException("User #" + localId + " not found"));

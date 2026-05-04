@@ -5,6 +5,8 @@ import almax.bot.telegram.AdminGuard;
 import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.BotUser;
 import almax.bot.user.UserService;
+import almax.bot.vpn.VpnException;
+import almax.bot.vpn.VpnService;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
@@ -29,6 +31,7 @@ public class AdminCommandHandler implements UpdateHandler {
               /admin list""";
 
     private final UserService userService;
+    private final VpnService vpnService;
     private final AdminNotifier adminNotifier;
     private final AdminGuard adminGuard;
     private final TelegramBot bot;
@@ -73,23 +76,70 @@ public class AdminCommandHandler implements UpdateHandler {
         if (tokens.length < 4) { reply(msg, "Usage: /admin approve <id> <alias>"); return; }
         long id = Long.parseLong(tokens[2]);
         String alias = tokens[3].trim();
-        BotUser u = userService.approve(id, alias);
+
+        BotUser existing = userService.findRequired(id);
+
+        VpnService.Provision provision;
+        try {
+            provision = vpnService.approve(alias);
+        } catch (VpnException e) {
+            log.error("VPN approve failed for user id={} alias={}", id, alias, e);
+            reply(msg, "VPN provisioning failed: " + e.getMessage()
+                    + "\n(DB status unchanged for user #" + id + ")");
+            return;
+        }
+
+        BotUser u = userService.approve(existing.getId(), alias);
         adminNotifier.notifyApproved(u);
-        reply(msg, "Approved user #" + id + " (tg:" + u.getTgUserId() + ") alias=" + u.getAlias());
+        adminNotifier.notifyVpnProvisioned(u, provision);
+        reply(msg, "Approved user #" + id + " (tg:" + u.getTgUserId() + ") alias=" + u.getAlias()
+                + " — VPN " + (provision.action() == VpnService.Action.ADDED ? "added" : "rotated"));
     }
 
     private void handleDeny(Message msg, String[] tokens) {
         if (tokens.length < 3) { reply(msg, "Usage: /admin deny <id>"); return; }
         long id = Long.parseLong(tokens[2]);
+
+        BotUser before = userService.findRequired(id);
+        String alias = before.getAlias();
+        boolean revoked = revokeVpnSafely(msg, id, alias);
+
         BotUser u = userService.deny(id);
-        reply(msg, "Denied user #" + id + " (tg:" + u.getTgUserId() + ")");
+        StringBuilder sb = new StringBuilder()
+                .append("Denied user #").append(id).append(" (tg:").append(u.getTgUserId()).append(")");
+        if (alias != null && !alias.isBlank()) {
+            sb.append(" — VPN ").append(revoked ? "revoked (alias='" + alias + "')" : "no-op (no '" + alias + "' on host)");
+        }
+        reply(msg, sb.toString());
     }
 
     private void handleRemove(Message msg, String[] tokens) {
         if (tokens.length < 3) { reply(msg, "Usage: /admin remove <id>"); return; }
         long id = Long.parseLong(tokens[2]);
+
+        BotUser before = userService.findRequired(id);
+        String alias = before.getAlias();
+        boolean revoked = revokeVpnSafely(msg, id, alias);
+
         BotUser u = userService.remove(id);
-        reply(msg, "Removed user #" + id + " (tg:" + u.getTgUserId() + ")");
+        StringBuilder sb = new StringBuilder()
+                .append("Removed user #").append(id).append(" (tg:").append(u.getTgUserId()).append(")");
+        if (alias != null && !alias.isBlank()) {
+            sb.append(" — VPN ").append(revoked ? "revoked (alias='" + alias + "')" : "no-op (no '" + alias + "' on host)");
+        }
+        reply(msg, sb.toString());
+    }
+
+    private boolean revokeVpnSafely(Message msg, long id, String alias) {
+        if (alias == null || alias.isBlank()) return false;
+        try {
+            return vpnService.removeIfExists(alias);
+        } catch (VpnException e) {
+            log.error("VPN revoke failed for user id={} alias={}", id, alias, e);
+            reply(msg, "WARNING: VPN revoke for alias='" + alias + "' failed: " + e.getMessage()
+                    + "\nProceeding with DB update anyway.");
+            return false;
+        }
     }
 
     private void handleList(Message msg) {

@@ -13,6 +13,10 @@ services:
       vpn-bot-postgres:
         condition: service_healthy
     networks: [vpn-bot-net]
+    # The bot uses `docker exec vpn-russia vpn …` to provision and revoke
+    # VLESS users on the entry hop — so it needs the host's docker socket.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN must be set in bot/.env}
       - ADMIN_TG_ID=${ADMIN_TG_ID:?ADMIN_TG_ID must be set in bot/.env}
