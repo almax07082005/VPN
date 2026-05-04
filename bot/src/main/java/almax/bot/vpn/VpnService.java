@@ -22,6 +22,8 @@ public class VpnService {
 
     public record Provision(String alias, String vlessUri, byte[] qrPng, Action action) {}
 
+    public record RawResult(int exitCode, String output) {}
+
     // Pinned to the value of `container_name:` in russia/docker-compose.yml.
     // The russia stack always names the entry-hop container exactly this.
     private static final String DOCKER_BINARY = "docker";
@@ -101,6 +103,36 @@ public class VpnService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new VpnException("Interrupted while waiting for qrencode");
+        }
+    }
+
+    public RawResult runRaw(List<String> args) {
+        long timeoutMs = props.vpn().commandTimeoutMs();
+        List<String> cmd = new ArrayList<>(args.size() + 4);
+        cmd.add(DOCKER_BINARY);
+        cmd.add("exec");
+        cmd.add(CONTAINER_NAME);
+        cmd.add("vpn");
+        cmd.addAll(args);
+
+        log.info("Running (passthrough): {}", String.join(" ", cmd));
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        try {
+            Process p = pb.start();
+            p.getOutputStream().close();
+            byte[] out = p.getInputStream().readAllBytes();
+            if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
+                p.destroyForcibly();
+                return new RawResult(124, "(command timed out after " + timeoutMs + "ms)");
+            }
+            String stdout = stripAnsi(new String(out, StandardCharsets.UTF_8));
+            return new RawResult(p.exitValue(), stdout);
+        } catch (IOException e) {
+            return new RawResult(-1, "(invocation failed: " + e.getMessage() + ")");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new RawResult(-1, "(interrupted)");
         }
     }
 

@@ -47,7 +47,8 @@ public class BotLifecycle {
         BaseResponse adminCmds = adminBot.execute(new SetMyCommands(
                 new BotCommand("users", "User admin: approve / deny / remove / list"),
                 new BotCommand("send", "Broadcast a message"),
-                new BotCommand("sendto", "Send a message to specific user ids")
+                new BotCommand("sendto", "Send a message to specific user ids"),
+                new BotCommand("vpn", "Run any vpn CLI subcommand inside vpn-russia")
         ));
         if (!adminCmds.isOk()) log.warn("admin SetMyCommands failed: {}", adminCmds.description());
 
