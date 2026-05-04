@@ -6,6 +6,7 @@ import almax.bot.telegram.TgMarkdown;
 import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.BotUser;
 import almax.bot.user.UserService;
+import almax.bot.user.UserStatus;
 import almax.bot.vpn.VpnException;
 import almax.bot.vpn.VpnService;
 import com.pengrad.telegrambot.TelegramBot;
@@ -155,9 +156,10 @@ public class AdminCommandHandler implements UpdateHandler {
     private void handleList(Message msg) {
         List<BotUser> users = userService.listAll();
         if (users.isEmpty()) {
-            reply(msg, "No users yet.");
+            reply(msg, "No users yet. (total: 0)");
             return;
         }
+        int approved = 0, pending = 0, denied = 0;
         StringBuilder sb = new StringBuilder("Users:\n");
         for (BotUser u : users) {
             sb.append(u.getId()).append(" | ")
@@ -165,7 +167,16 @@ public class AdminCommandHandler implements UpdateHandler {
               .append(u.getUsername() == null ? "(no username)" : "@" + u.getUsername()).append(" | tg:")
               .append(u.getTgUserId()).append(" | ")
               .append(u.getStatus()).append('\n');
+            UserStatus s = u.getStatus();
+            if (s == UserStatus.APPROVED) approved++;
+            else if (s == UserStatus.PENDING) pending++;
+            else if (s == UserStatus.DENIED) denied++;
         }
+        sb.append("\nTotal: ").append(users.size())
+          .append(" (approved=").append(approved)
+          .append(", pending=").append(pending)
+          .append(", denied=").append(denied)
+          .append(')');
         reply(msg, sb.toString());
     }
 
