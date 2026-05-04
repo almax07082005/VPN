@@ -72,7 +72,7 @@ public class VpnPassthroughHandler implements AdminUpdateHandler {
         if (body.isBlank()) {
             text = TgMarkdown.esc(header + " (no output)");
         } else {
-            text = TgMarkdown.esc(header) + "\n" + TgMarkdown.code(body);
+            text = TgMarkdown.esc(header) + "\n" + TgMarkdown.codeBlock(body);
         }
         replyMd(msg, text);
     }
