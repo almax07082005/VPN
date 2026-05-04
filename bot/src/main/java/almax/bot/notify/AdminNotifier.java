@@ -35,7 +35,7 @@ public class AdminNotifier {
                 : "@" + u.getUsername() + "  tg:" + u.getTgUserId();
         String body = "New access request\n"
                 + TgMarkdown.esc("#" + u.getId() + "  " + who) + "\n\n"
-                + TgMarkdown.code("/admin approve " + u.getId() + " <alias>") + "\n"
+                + TgMarkdown.code("/admin approve " + u.getId()) + " " + TgMarkdown.esc("<alias>") + "\n"
                 + TgMarkdown.code("/admin deny " + u.getId()) + "\n"
                 + TgMarkdown.code("/admin remove " + u.getId());
         SendResponse resp = adminBot.execute(new SendMessage(props.adminTgId(), body)
@@ -66,7 +66,7 @@ public class AdminNotifier {
             log.warn("Failed to send VPN header to admin for user id={}: {}", u.getId(), h.description());
         }
 
-        SendResponse t = adminBot.execute(new SendMessage(props.adminTgId(), TgMarkdown.codeBlock(provision.vlessUri()))
+        SendResponse t = adminBot.execute(new SendMessage(props.adminTgId(), TgMarkdown.code(provision.vlessUri()))
                 .parseMode(ParseMode.MarkdownV2));
         if (!t.isOk()) {
             log.warn("Failed to send VPN URI block to admin for user id={}: {}", u.getId(), t.description());

@@ -23,7 +23,8 @@ import java.util.Set;
 @Component
 public class SendToCommandHandler implements AdminUpdateHandler {
 
-    private static final String USAGE = "Usage: " + TgMarkdown.code("/sendto <id1>,<id2>,... <text>");
+    private static final String USAGE = "Usage: " + TgMarkdown.code("/sendto") + " "
+            + TgMarkdown.esc("<id1>,<id2>,... <text>");
 
     private final BroadcastService broadcastService;
     private final UserService userService;

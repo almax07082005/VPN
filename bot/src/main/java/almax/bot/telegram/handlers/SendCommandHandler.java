@@ -59,7 +59,8 @@ public class SendCommandHandler implements AdminUpdateHandler {
     }
 
     private void replyUsage(Message msg) {
-        bot.execute(new SendMessage(msg.chat().id(), "Usage: " + TgMarkdown.code("/send <text>"))
+        bot.execute(new SendMessage(msg.chat().id(),
+                "Usage: " + TgMarkdown.code("/send") + " " + TgMarkdown.esc("<text>"))
                 .parseMode(ParseMode.MarkdownV2));
     }
 }

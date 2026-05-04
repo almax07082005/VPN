@@ -26,9 +26,9 @@ import java.util.NoSuchElementException;
 public class AdminCommandHandler implements AdminUpdateHandler {
 
     private static final String USAGE = "Admin commands:\n"
-            + "  " + TgMarkdown.code("/admin approve <id> <alias>") + "\n"
-            + "  " + TgMarkdown.code("/admin deny <id>") + "\n"
-            + "  " + TgMarkdown.code("/admin remove <id>") + "\n"
+            + "  " + TgMarkdown.code("/admin approve") + " " + TgMarkdown.esc("<id> <alias>") + "\n"
+            + "  " + TgMarkdown.code("/admin deny") + " " + TgMarkdown.esc("<id>") + "\n"
+            + "  " + TgMarkdown.code("/admin remove") + " " + TgMarkdown.esc("<id>") + "\n"
             + "  " + TgMarkdown.code("/admin list");
 
     private final UserService userService;
@@ -87,7 +87,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
 
     private void handleApprove(Message msg, String[] tokens) {
         if (tokens.length < 4) {
-            replyMd(msg, "Usage: " + TgMarkdown.code("/admin approve <id> <alias>"));
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin approve") + " " + TgMarkdown.esc("<id> <alias>"));
             return;
         }
         long id = Long.parseLong(tokens[2]);
@@ -114,7 +114,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
 
     private void handleDeny(Message msg, String[] tokens) {
         if (tokens.length < 3) {
-            replyMd(msg, "Usage: " + TgMarkdown.code("/admin deny <id>"));
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin deny") + " " + TgMarkdown.esc("<id>"));
             return;
         }
         long id = Long.parseLong(tokens[2]);
@@ -134,7 +134,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
 
     private void handleRemove(Message msg, String[] tokens) {
         if (tokens.length < 3) {
-            replyMd(msg, "Usage: " + TgMarkdown.code("/admin remove <id>"));
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin remove") + " " + TgMarkdown.esc("<id>"));
             return;
         }
         long id = Long.parseLong(tokens[2]);
