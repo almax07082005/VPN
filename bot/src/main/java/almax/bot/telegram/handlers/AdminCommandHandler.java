@@ -108,6 +108,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
         BotUser u = userService.approve(existing.getId(), alias);
         adminNotifier.notifyApproved(u);
         adminNotifier.notifyVpnProvisioned(u, provision);
+        adminNotifier.sendVpnConfigToUser(u, provision);
         reply(msg, "Approved user #" + id + " (tg:" + u.getTgUserId() + ") alias=" + u.getAlias()
                 + " — VPN " + (provision.action() == VpnService.Action.ADDED ? "added" : "rotated"));
     }

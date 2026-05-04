@@ -96,6 +96,28 @@ public class AdminNotifier {
         }
     }
 
+    public void sendVpnConfigToUser(BotUser u, VpnService.Provision provision) {
+        String greeting = provision.action() == VpnService.Action.ADDED
+                ? "Here is your VPN configuration:"
+                : "Your VPN configuration was rotated. Use the new one — the old one no longer works:";
+        SendResponse g = publicBot.execute(new SendMessage(u.getTgUserId(), greeting));
+        if (!g.isOk()) {
+            log.warn("Failed to greet user id={} with VPN config: {}", u.getId(), g.description());
+        }
+
+        SendResponse t = publicBot.execute(new SendMessage(u.getTgUserId(), TgMarkdown.code(provision.vlessUri()))
+                .parseMode(ParseMode.MarkdownV2));
+        if (!t.isOk()) {
+            log.warn("Failed to send VPN URI to user id={}: {}", u.getId(), t.description());
+        }
+
+        SendResponse photo = publicBot.execute(new SendPhoto(u.getTgUserId(), provision.qrPng())
+                .caption("QR for " + provision.alias()));
+        if (!photo.isOk()) {
+            log.warn("Failed to send VPN QR photo to user id={}: {}", u.getId(), photo.description());
+        }
+    }
+
     public void notifyError(String text) {
         SendResponse resp = adminBot.execute(new SendMessage(props.adminTgId(), text));
         if (!resp.isOk()) {
