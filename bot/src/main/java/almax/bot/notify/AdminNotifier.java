@@ -96,10 +96,10 @@ public class AdminNotifier {
         }
     }
 
-    public void sendVpnConfigToUser(BotUser u, VpnService.Provision provision) {
-        String greeting = provision.action() == VpnService.Action.ADDED
-                ? "Here is your VPN configuration:"
-                : "Your VPN configuration was rotated. Use the new one — the old one no longer works:";
+    public void sendVpnConfigToUser(BotUser u, VpnService.Provision provision, boolean rotated) {
+        String greeting = rotated
+                ? "Your VPN configuration was rotated. Use the new one — the old one no longer works:"
+                : "Here is your VPN configuration:";
         SendResponse g = publicBot.execute(new SendMessage(u.getTgUserId(), greeting));
         if (!g.isOk()) {
             log.warn("Failed to greet user id={} with VPN config: {}", u.getId(), g.description());

@@ -94,6 +94,19 @@ public class AdminCommandHandler implements AdminUpdateHandler {
         String alias = tokens[3].trim();
 
         BotUser existing = userService.findRequired(id);
+        boolean wasApproved = existing.getStatus() == UserStatus.APPROVED;
+        String oldAlias = existing.getAlias();
+        boolean aliasChanged = wasApproved && oldAlias != null && !oldAlias.equals(alias);
+
+        if (aliasChanged) {
+            try {
+                vpnService.removeIfExists(oldAlias);
+            } catch (VpnException e) {
+                log.error("Failed to revoke old alias '{}' before re-approving id={} as '{}'", oldAlias, id, alias, e);
+                reply(msg, "WARNING: failed to revoke old alias '" + oldAlias + "': " + e.getMessage()
+                        + "\nProceeding with new alias anyway.");
+            }
+        }
 
         VpnService.Provision provision;
         try {
@@ -106,11 +119,19 @@ public class AdminCommandHandler implements AdminUpdateHandler {
         }
 
         BotUser u = userService.approve(existing.getId(), alias);
-        adminNotifier.notifyApproved(u);
+        if (!wasApproved) {
+            adminNotifier.notifyApproved(u);
+        }
         adminNotifier.notifyVpnProvisioned(u, provision);
-        adminNotifier.sendVpnConfigToUser(u, provision);
-        reply(msg, "Approved user #" + id + " (tg:" + u.getTgUserId() + ") alias=" + u.getAlias()
-                + " — VPN " + (provision.action() == VpnService.Action.ADDED ? "added" : "rotated"));
+        adminNotifier.sendVpnConfigToUser(u, provision, wasApproved);
+        StringBuilder reply = new StringBuilder()
+                .append("Approved user #").append(id)
+                .append(" (tg:").append(u.getTgUserId()).append(") alias=").append(u.getAlias())
+                .append(" — VPN ").append(provision.action() == VpnService.Action.ADDED ? "added" : "rotated");
+        if (aliasChanged) {
+            reply.append(" (revoked old alias '").append(oldAlias).append("')");
+        }
+        reply(msg, reply.toString());
     }
 
     private void handleDeny(Message msg, String[] tokens) {
