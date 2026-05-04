@@ -43,9 +43,13 @@ VPN/
 │   ├── docker-compose.yml
 │   ├── entrypoint.sh
 │   └── config.json.tmpl
+├── bot/                           # optional: Telegram control plane (public + admin bots)
+│   └── …                          # see bot/README.md
 └── scripts/
     └── verify.sh                  # post-deploy sanity checks (runs from your laptop)
 ```
+
+The `bot/` subproject is optional — a Spring Boot + Postgres stack that runs on the **same Russia VM** alongside `vpn-russia` and lets you provision/rotate/revoke VLESS users from Telegram instead of SSH'ing in. Two Telegram bots: a public one users `/start` to request access, and an admin-only one for the actual control commands. See [`bot/README.md`](bot/README.md) for the full flow.
 
 ## Deploy
 
