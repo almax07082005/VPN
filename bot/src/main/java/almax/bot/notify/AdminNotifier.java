@@ -47,7 +47,7 @@ public class AdminNotifier {
 
     public void notifyApproved(BotUser u) {
         SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
-                "You're in. You'll receive announcements from now on."));
+                "Доступ предоставлен. Объявления будут приходить сюда."));
         if (!resp.isOk()) {
             log.warn("Failed to DM approval to user id={}: {}", u.getId(), resp.description());
         }
@@ -55,7 +55,7 @@ public class AdminNotifier {
 
     public void notifyDenied(BotUser u) {
         SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
-                "Your access was revoked by the admin."));
+                "Ваш доступ был отозван администратором."));
         if (!resp.isOk()) {
             log.warn("Failed to DM deny to user id={}: {}", u.getId(), resp.description());
         }
@@ -63,8 +63,8 @@ public class AdminNotifier {
 
     public void notifyRemoved(BotUser u) {
         SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
-                "Your access was revoked and your record was cleared. "
-                        + "Send /start to request access again."));
+                "Ваш доступ был отозван, запись удалена. "
+                        + "Отправьте /start, чтобы запросить доступ снова."));
         if (!resp.isOk()) {
             log.warn("Failed to DM remove to user id={}: {}", u.getId(), resp.description());
         }
@@ -98,8 +98,8 @@ public class AdminNotifier {
 
     public void sendVpnConfigToUser(BotUser u, VpnService.Provision provision, boolean rotated) {
         String greeting = rotated
-                ? "Your VPN configuration was rotated. Use the new one — the old one no longer works:"
-                : "Here is your VPN configuration:";
+                ? "Ваша VPN-конфигурация обновлена. Используйте новую — старая больше не работает:"
+                : "Ваша VPN-конфигурация:";
         SendResponse g = publicBot.execute(new SendMessage(u.getTgUserId(), greeting));
         if (!g.isOk()) {
             log.warn("Failed to greet user id={} with VPN config: {}", u.getId(), g.description());
@@ -112,7 +112,7 @@ public class AdminNotifier {
         }
 
         SendResponse photo = publicBot.execute(new SendPhoto(u.getTgUserId(), provision.qrPng())
-                .caption("QR for " + provision.alias()));
+                .caption("QR-код для " + provision.alias()));
         if (!photo.isOk()) {
             log.warn("Failed to send VPN QR photo to user id={}: {}", u.getId(), photo.description());
         }

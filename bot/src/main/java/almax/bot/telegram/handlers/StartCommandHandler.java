@@ -45,10 +45,10 @@ public class StartCommandHandler implements PublicUpdateHandler {
 
         UserService.RegisterResult result = userService.register(from.id(), from.username());
         String reply = switch (result.outcome()) {
-            case NEW_PENDING -> "Request sent. Waiting for the admin to approve you.";
-            case ALREADY_PENDING -> "You're already in the queue. Please wait.";
-            case ALREADY_APPROVED -> "You're already approved. You'll receive announcements here.";
-            case DENIED -> "Your request was previously denied.";
+            case NEW_PENDING -> "Запрос отправлен. Ожидайте подтверждения администратора.";
+            case ALREADY_PENDING -> "Вы уже в очереди. Пожалуйста, подождите.";
+            case ALREADY_APPROVED -> "Вы уже одобрены. Объявления будут приходить сюда.";
+            case DENIED -> "Ваш запрос ранее был отклонён.";
         };
         bot.execute(new SendMessage(msg.chat().id(), reply));
 

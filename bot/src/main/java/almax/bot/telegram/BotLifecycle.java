@@ -40,7 +40,7 @@ public class BotLifecycle {
         log.info("Bots starting; admin tg id = {}", adminGuard.adminTgId());
 
         BaseResponse pubCmds = publicBot.execute(new SetMyCommands(
-                new BotCommand("start", "Request access")
+                new BotCommand("start", "Запросить доступ")
         ));
         if (!pubCmds.isOk()) log.warn("public SetMyCommands failed: {}", pubCmds.description());
 
