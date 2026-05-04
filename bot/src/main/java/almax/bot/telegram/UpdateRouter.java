@@ -4,16 +4,15 @@ import com.pengrad.telegrambot.UpdatesListener;
 import com.pengrad.telegrambot.model.Update;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class UpdateRouter implements UpdatesListener {
 
-    private final List<UpdateHandler> handlers;
+    private final String label;
+    private final List<? extends UpdateHandler> handlers;
 
     @Override
     public int process(List<Update> updates) {
@@ -24,7 +23,7 @@ public class UpdateRouter implements UpdatesListener {
                         .findFirst()
                         .ifPresent(h -> h.handle(update));
             } catch (Exception e) {
-                log.error("Update {} failed", update.updateId(), e);
+                log.error("[{}] update {} failed", label, update.updateId(), e);
             }
         }
         return UpdatesListener.CONFIRMED_UPDATES_ALL;

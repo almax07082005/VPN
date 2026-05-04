@@ -3,23 +3,30 @@ package almax.bot.telegram.handlers;
 import almax.bot.broadcast.BroadcastResult;
 import almax.bot.broadcast.BroadcastService;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.AdminUpdateHandler;
 import almax.bot.telegram.TgMarkdown;
-import almax.bot.telegram.UpdateHandler;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
-public class SendCommandHandler implements UpdateHandler {
+public class SendCommandHandler implements AdminUpdateHandler {
 
     private final BroadcastService broadcastService;
     private final AdminGuard adminGuard;
     private final TelegramBot bot;
+
+    public SendCommandHandler(BroadcastService broadcastService,
+                              AdminGuard adminGuard,
+                              @Qualifier("adminBot") TelegramBot adminBot) {
+        this.broadcastService = broadcastService;
+        this.adminGuard = adminGuard;
+        this.bot = adminBot;
+    }
 
     @Override
     public boolean supports(Update update) {

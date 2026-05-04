@@ -2,8 +2,8 @@ package almax.bot.telegram.handlers;
 
 import almax.bot.notify.AdminNotifier;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.AdminUpdateHandler;
 import almax.bot.telegram.TgMarkdown;
-import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.BotUser;
 import almax.bot.user.UserService;
 import almax.bot.user.UserStatus;
@@ -14,17 +14,16 @@ import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.NoSuchElementException;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
-public class AdminCommandHandler implements UpdateHandler {
+public class AdminCommandHandler implements AdminUpdateHandler {
 
     private static final String USAGE = "Admin commands:\n"
             + "  " + TgMarkdown.code("/admin approve <id> <alias>") + "\n"
@@ -37,6 +36,18 @@ public class AdminCommandHandler implements UpdateHandler {
     private final AdminNotifier adminNotifier;
     private final AdminGuard adminGuard;
     private final TelegramBot bot;
+
+    public AdminCommandHandler(UserService userService,
+                               VpnService vpnService,
+                               AdminNotifier adminNotifier,
+                               AdminGuard adminGuard,
+                               @Qualifier("adminBot") TelegramBot adminBot) {
+        this.userService = userService;
+        this.vpnService = vpnService;
+        this.adminNotifier = adminNotifier;
+        this.adminGuard = adminGuard;
+        this.bot = adminBot;
+    }
 
     @Override
     public boolean supports(Update update) {

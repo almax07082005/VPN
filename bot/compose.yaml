@@ -19,6 +19,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - BOT_TOKEN=${BOT_TOKEN:?BOT_TOKEN must be set in bot/.env}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN:?ADMIN_BOT_TOKEN must be set in bot/.env}
       - ADMIN_TG_ID=${ADMIN_TG_ID:?ADMIN_TG_ID must be set in bot/.env}
       - DB_HOST=vpn-bot-postgres
       - DB_NAME=vpnbot

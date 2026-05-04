@@ -1,30 +1,33 @@
 package almax.bot.telegram.handlers;
 
 import almax.bot.notify.AdminNotifier;
-import almax.bot.telegram.AdminGuard;
-import almax.bot.telegram.TgMarkdown;
-import almax.bot.telegram.UpdateHandler;
+import almax.bot.telegram.PublicUpdateHandler;
 import almax.bot.user.RegisterOutcome;
 import almax.bot.user.UserService;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.User;
-import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
-public class StartCommandHandler implements UpdateHandler {
+public class StartCommandHandler implements PublicUpdateHandler {
 
     private final UserService userService;
     private final AdminNotifier adminNotifier;
-    private final AdminGuard adminGuard;
     private final TelegramBot bot;
+
+    public StartCommandHandler(UserService userService,
+                               AdminNotifier adminNotifier,
+                               @Qualifier("publicBot") TelegramBot publicBot) {
+        this.userService = userService;
+        this.adminNotifier = adminNotifier;
+        this.bot = publicBot;
+    }
 
     @Override
     public boolean supports(Update update) {
@@ -39,13 +42,6 @@ public class StartCommandHandler implements UpdateHandler {
         Message msg = update.message();
         User from = msg.from();
         if (from == null) return;
-
-        if (adminGuard.isAdmin(msg)) {
-            bot.execute(new SendMessage(msg.chat().id(),
-                    "You're the admin\\. Use " + TgMarkdown.code("/admin") + " and " + TgMarkdown.code("/send") + "\\.")
-                    .parseMode(ParseMode.MarkdownV2));
-            return;
-        }
 
         UserService.RegisterResult result = userService.register(from.id(), from.username());
         String reply = switch (result.outcome()) {

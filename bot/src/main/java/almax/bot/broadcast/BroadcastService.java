@@ -6,20 +6,27 @@ import almax.bot.user.UserService;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.request.SendMessage;
 import com.pengrad.telegrambot.response.SendResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class BroadcastService {
 
     private final TelegramBot bot;
     private final UserService userService;
     private final BotProperties props;
+
+    public BroadcastService(@Qualifier("publicBot") TelegramBot publicBot,
+                            UserService userService,
+                            BotProperties props) {
+        this.bot = publicBot;
+        this.userService = userService;
+        this.props = props;
+    }
 
     public BroadcastResult sendToAllApproved(String text) {
         return sendTo(userService.listApproved(), text);

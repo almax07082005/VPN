@@ -9,17 +9,25 @@ import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
 import com.pengrad.telegrambot.request.SendPhoto;
 import com.pengrad.telegrambot.response.SendResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AdminNotifier {
 
-    private final TelegramBot bot;
+    private final TelegramBot adminBot;
+    private final TelegramBot publicBot;
     private final BotProperties props;
+
+    public AdminNotifier(@Qualifier("adminBot") TelegramBot adminBot,
+                         @Qualifier("publicBot") TelegramBot publicBot,
+                         BotProperties props) {
+        this.adminBot = adminBot;
+        this.publicBot = publicBot;
+        this.props = props;
+    }
 
     public void notifyNewPending(BotUser u) {
         String who = u.getUsername() == null
@@ -30,7 +38,7 @@ public class AdminNotifier {
                 + TgMarkdown.code("/admin approve " + u.getId() + " <alias>") + "\n"
                 + TgMarkdown.code("/admin deny " + u.getId()) + "\n"
                 + TgMarkdown.code("/admin remove " + u.getId());
-        SendResponse resp = bot.execute(new SendMessage(props.adminTgId(), body)
+        SendResponse resp = adminBot.execute(new SendMessage(props.adminTgId(), body)
                 .parseMode(ParseMode.MarkdownV2));
         if (!resp.isOk()) {
             log.warn("Failed to notify admin of new pending user id={}: {}", u.getId(), resp.description());
@@ -38,7 +46,7 @@ public class AdminNotifier {
     }
 
     public void notifyApproved(BotUser u) {
-        SendResponse resp = bot.execute(new SendMessage(u.getTgUserId(),
+        SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
                 "You're in. You'll receive announcements from now on."));
         if (!resp.isOk()) {
             log.warn("Failed to DM approval to user id={}: {}", u.getId(), resp.description());
@@ -52,19 +60,19 @@ public class AdminNotifier {
                 + TgMarkdown.esc("#" + u.getId() + " (" + who + ") — alias ") + TgMarkdown.code(provision.alias())
                 + TgMarkdown.esc(" (" + action + ")");
 
-        SendResponse h = bot.execute(new SendMessage(props.adminTgId(), header)
+        SendResponse h = adminBot.execute(new SendMessage(props.adminTgId(), header)
                 .parseMode(ParseMode.MarkdownV2));
         if (!h.isOk()) {
             log.warn("Failed to send VPN header to admin for user id={}: {}", u.getId(), h.description());
         }
 
-        SendResponse t = bot.execute(new SendMessage(props.adminTgId(), TgMarkdown.codeBlock(provision.vlessUri()))
+        SendResponse t = adminBot.execute(new SendMessage(props.adminTgId(), TgMarkdown.codeBlock(provision.vlessUri()))
                 .parseMode(ParseMode.MarkdownV2));
         if (!t.isOk()) {
             log.warn("Failed to send VPN URI block to admin for user id={}: {}", u.getId(), t.description());
         }
 
-        SendResponse photo = bot.execute(new SendPhoto(props.adminTgId(), provision.qrPng())
+        SendResponse photo = adminBot.execute(new SendPhoto(props.adminTgId(), provision.qrPng())
                 .caption("QR for " + provision.alias()));
         if (!photo.isOk()) {
             log.warn("Failed to send VPN QR photo to admin for user id={}: {}", u.getId(), photo.description());
@@ -72,7 +80,7 @@ public class AdminNotifier {
     }
 
     public void notifyError(String text) {
-        SendResponse resp = bot.execute(new SendMessage(props.adminTgId(), text));
+        SendResponse resp = adminBot.execute(new SendMessage(props.adminTgId(), text));
         if (!resp.isOk()) {
             log.warn("Failed to push error to admin: {}", resp.description());
         }
