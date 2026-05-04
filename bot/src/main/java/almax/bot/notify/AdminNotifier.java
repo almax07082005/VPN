@@ -53,6 +53,23 @@ public class AdminNotifier {
         }
     }
 
+    public void notifyDenied(BotUser u) {
+        SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
+                "Your access was revoked by the admin."));
+        if (!resp.isOk()) {
+            log.warn("Failed to DM deny to user id={}: {}", u.getId(), resp.description());
+        }
+    }
+
+    public void notifyRemoved(BotUser u) {
+        SendResponse resp = publicBot.execute(new SendMessage(u.getTgUserId(),
+                "Your access was revoked and your record was cleared. "
+                        + "Send /start to request access again."));
+        if (!resp.isOk()) {
+            log.warn("Failed to DM remove to user id={}: {}", u.getId(), resp.description());
+        }
+    }
+
     public void notifyVpnProvisioned(BotUser u, VpnService.Provision provision) {
         String who = u.getUsername() == null ? "tg:" + u.getTgUserId() : "@" + u.getUsername();
         String action = provision.action() == VpnService.Action.ADDED ? "new" : "rotated";

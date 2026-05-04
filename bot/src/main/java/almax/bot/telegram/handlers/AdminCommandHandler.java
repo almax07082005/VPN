@@ -124,6 +124,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
         boolean revoked = revokeVpnSafely(msg, id, alias);
 
         BotUser u = userService.deny(id);
+        adminNotifier.notifyDenied(u);
         StringBuilder sb = new StringBuilder()
                 .append("Denied user #").append(id).append(" (tg:").append(u.getTgUserId()).append(")");
         if (alias != null && !alias.isBlank()) {
@@ -144,6 +145,7 @@ public class AdminCommandHandler implements AdminUpdateHandler {
         boolean revoked = revokeVpnSafely(msg, id, alias);
 
         BotUser u = userService.remove(id);
+        adminNotifier.notifyRemoved(u);
         StringBuilder sb = new StringBuilder()
                 .append("Removed user #").append(id).append(" (tg:").append(u.getTgUserId()).append(")");
         if (alias != null && !alias.isBlank()) {
