@@ -45,7 +45,7 @@ public class BotLifecycle {
         if (!pubCmds.isOk()) log.warn("public SetMyCommands failed: {}", pubCmds.description());
 
         BaseResponse adminCmds = adminBot.execute(new SetMyCommands(
-                new BotCommand("admin", "Admin tools"),
+                new BotCommand("users", "User admin: approve / deny / remove / list"),
                 new BotCommand("send", "Broadcast a message"),
                 new BotCommand("sendto", "Send a message to specific user ids")
         ));

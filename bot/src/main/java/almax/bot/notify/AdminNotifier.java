@@ -35,9 +35,9 @@ public class AdminNotifier {
                 : "@" + u.getUsername() + "  tg:" + u.getTgUserId();
         String body = "New access request\n"
                 + TgMarkdown.esc("#" + u.getId() + "  " + who) + "\n\n"
-                + TgMarkdown.code("/admin approve " + u.getId()) + " " + TgMarkdown.esc("<alias>") + "\n"
-                + TgMarkdown.code("/admin deny " + u.getId()) + "\n"
-                + TgMarkdown.code("/admin remove " + u.getId());
+                + TgMarkdown.code("/users approve " + u.getId()) + " " + TgMarkdown.esc("<alias>") + "\n"
+                + TgMarkdown.code("/users deny " + u.getId()) + "\n"
+                + TgMarkdown.code("/users remove " + u.getId());
         SendResponse resp = adminBot.execute(new SendMessage(props.adminTgId(), body)
                 .parseMode(ParseMode.MarkdownV2));
         if (!resp.isOk()) {
