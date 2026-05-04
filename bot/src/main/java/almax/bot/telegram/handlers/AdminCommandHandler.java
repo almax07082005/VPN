@@ -2,6 +2,7 @@ package almax.bot.telegram.handlers;
 
 import almax.bot.notify.AdminNotifier;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.TgMarkdown;
 import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.BotUser;
 import almax.bot.user.UserService;
@@ -10,6 +11,7 @@ import almax.bot.vpn.VpnService;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
+import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,12 +25,11 @@ import java.util.NoSuchElementException;
 @Slf4j
 public class AdminCommandHandler implements UpdateHandler {
 
-    private static final String USAGE = """
-            Admin commands:
-              /admin approve <id> <alias>
-              /admin deny <id>
-              /admin remove <id>
-              /admin list""";
+    private static final String USAGE = "Admin commands:\n"
+            + "  " + TgMarkdown.code("/admin approve <id> <alias>") + "\n"
+            + "  " + TgMarkdown.code("/admin deny <id>") + "\n"
+            + "  " + TgMarkdown.code("/admin remove <id>") + "\n"
+            + "  " + TgMarkdown.code("/admin list");
 
     private final UserService userService;
     private final VpnService vpnService;
@@ -51,7 +52,7 @@ public class AdminCommandHandler implements UpdateHandler {
 
         String[] tokens = msg.text().trim().split("\\s+", 4);
         if (tokens.length < 2) {
-            reply(msg, USAGE);
+            replyMd(msg, USAGE);
             return;
         }
         String sub = tokens[1].toLowerCase();
@@ -61,19 +62,22 @@ public class AdminCommandHandler implements UpdateHandler {
                 case "deny" -> handleDeny(msg, tokens);
                 case "remove" -> handleRemove(msg, tokens);
                 case "list" -> handleList(msg);
-                default -> reply(msg, "Unknown subcommand: " + sub + "\n\n" + USAGE);
+                default -> replyMd(msg, "Unknown subcommand: " + TgMarkdown.esc(sub) + "\n\n" + USAGE);
             }
         } catch (NoSuchElementException nse) {
             reply(msg, nse.getMessage());
         } catch (NumberFormatException nfe) {
-            reply(msg, "Bad id.\n\n" + USAGE);
+            replyMd(msg, "Bad id\\.\n\n" + USAGE);
         } catch (IllegalArgumentException iae) {
-            reply(msg, iae.getMessage() + "\n\n" + USAGE);
+            replyMd(msg, TgMarkdown.esc(iae.getMessage()) + "\n\n" + USAGE);
         }
     }
 
     private void handleApprove(Message msg, String[] tokens) {
-        if (tokens.length < 4) { reply(msg, "Usage: /admin approve <id> <alias>"); return; }
+        if (tokens.length < 4) {
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin approve <id> <alias>"));
+            return;
+        }
         long id = Long.parseLong(tokens[2]);
         String alias = tokens[3].trim();
 
@@ -97,7 +101,10 @@ public class AdminCommandHandler implements UpdateHandler {
     }
 
     private void handleDeny(Message msg, String[] tokens) {
-        if (tokens.length < 3) { reply(msg, "Usage: /admin deny <id>"); return; }
+        if (tokens.length < 3) {
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin deny <id>"));
+            return;
+        }
         long id = Long.parseLong(tokens[2]);
 
         BotUser before = userService.findRequired(id);
@@ -114,7 +121,10 @@ public class AdminCommandHandler implements UpdateHandler {
     }
 
     private void handleRemove(Message msg, String[] tokens) {
-        if (tokens.length < 3) { reply(msg, "Usage: /admin remove <id>"); return; }
+        if (tokens.length < 3) {
+            replyMd(msg, "Usage: " + TgMarkdown.code("/admin remove <id>"));
+            return;
+        }
         long id = Long.parseLong(tokens[2]);
 
         BotUser before = userService.findRequired(id);
@@ -161,5 +171,9 @@ public class AdminCommandHandler implements UpdateHandler {
 
     private void reply(Message msg, String text) {
         bot.execute(new SendMessage(msg.chat().id(), text));
+    }
+
+    private void replyMd(Message msg, String text) {
+        bot.execute(new SendMessage(msg.chat().id(), text).parseMode(ParseMode.MarkdownV2));
     }
 }

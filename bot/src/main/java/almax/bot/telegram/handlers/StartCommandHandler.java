@@ -2,6 +2,7 @@ package almax.bot.telegram.handlers;
 
 import almax.bot.notify.AdminNotifier;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.TgMarkdown;
 import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.RegisterOutcome;
 import almax.bot.user.UserService;
@@ -9,6 +10,7 @@ import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.User;
+import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +42,8 @@ public class StartCommandHandler implements UpdateHandler {
 
         if (adminGuard.isAdmin(msg)) {
             bot.execute(new SendMessage(msg.chat().id(),
-                    "You're the admin. Use /admin and /send."));
+                    "You're the admin\\. Use " + TgMarkdown.code("/admin") + " and " + TgMarkdown.code("/send") + "\\.")
+                    .parseMode(ParseMode.MarkdownV2));
             return;
         }
 

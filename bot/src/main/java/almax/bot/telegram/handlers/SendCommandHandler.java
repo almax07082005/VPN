@@ -3,10 +3,12 @@ package almax.bot.telegram.handlers;
 import almax.bot.broadcast.BroadcastResult;
 import almax.bot.broadcast.BroadcastService;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.TgMarkdown;
 import almax.bot.telegram.UpdateHandler;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
+import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -35,17 +37,22 @@ public class SendCommandHandler implements UpdateHandler {
         String raw = msg.text();
         int idx = raw.indexOf(' ');
         if (idx < 0 || idx + 1 >= raw.length()) {
-            bot.execute(new SendMessage(msg.chat().id(), "Usage: /send <text>"));
+            replyUsage(msg);
             return;
         }
         String text = raw.substring(idx + 1).trim();
         if (text.isEmpty()) {
-            bot.execute(new SendMessage(msg.chat().id(), "Usage: /send <text>"));
+            replyUsage(msg);
             return;
         }
 
         BroadcastResult result = broadcastService.sendToAllApproved(text);
         bot.execute(new SendMessage(msg.chat().id(),
                 "sent to %d / %d users, %d failed".formatted(result.sent(), result.total(), result.failed())));
+    }
+
+    private void replyUsage(Message msg) {
+        bot.execute(new SendMessage(msg.chat().id(), "Usage: " + TgMarkdown.code("/send <text>"))
+                .parseMode(ParseMode.MarkdownV2));
     }
 }

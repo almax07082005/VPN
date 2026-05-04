@@ -3,12 +3,14 @@ package almax.bot.telegram.handlers;
 import almax.bot.broadcast.BroadcastResult;
 import almax.bot.broadcast.BroadcastService;
 import almax.bot.telegram.AdminGuard;
+import almax.bot.telegram.TgMarkdown;
 import almax.bot.telegram.UpdateHandler;
 import almax.bot.user.BotUser;
 import almax.bot.user.UserService;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
+import com.pengrad.telegrambot.model.request.ParseMode;
 import com.pengrad.telegrambot.request.SendMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -22,7 +24,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class SendToCommandHandler implements UpdateHandler {
 
-    private static final String USAGE = "Usage: /sendto <id1>,<id2>,... <text>";
+    private static final String USAGE = "Usage: " + TgMarkdown.code("/sendto <id1>,<id2>,... <text>");
 
     private final BroadcastService broadcastService;
     private final UserService userService;
@@ -44,13 +46,13 @@ public class SendToCommandHandler implements UpdateHandler {
 
         String[] tokens = msg.text().trim().split("\\s+", 3);
         if (tokens.length < 3) {
-            reply(msg, USAGE);
+            replyMd(msg, USAGE);
             return;
         }
         String idsRaw = tokens[1];
         String text = tokens[2].trim();
         if (text.isEmpty()) {
-            reply(msg, USAGE);
+            replyMd(msg, USAGE);
             return;
         }
 
@@ -66,11 +68,11 @@ public class SendToCommandHandler implements UpdateHandler {
             }
         }
         if (!badTokens.isEmpty()) {
-            reply(msg, "Bad id(s): " + String.join(", ", badTokens) + "\n\n" + USAGE);
+            replyMd(msg, TgMarkdown.esc("Bad id(s): " + String.join(", ", badTokens)) + "\n\n" + USAGE);
             return;
         }
         if (ids.isEmpty()) {
-            reply(msg, USAGE);
+            replyMd(msg, USAGE);
             return;
         }
 
@@ -100,5 +102,9 @@ public class SendToCommandHandler implements UpdateHandler {
 
     private void reply(Message msg, String text) {
         bot.execute(new SendMessage(msg.chat().id(), text));
+    }
+
+    private void replyMd(Message msg, String text) {
+        bot.execute(new SendMessage(msg.chat().id(), text).parseMode(ParseMode.MarkdownV2));
     }
 }
