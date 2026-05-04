@@ -13,15 +13,17 @@ Each bot has its own token and its own /commands list registered with @BotFather
 
 1. A user DMs `/start` to the **public bot**. Their request is recorded with status `PENDING`.
 2. The admin bot DMs the admin with the new user's local id, Telegram username, and the exact admin commands ready to tap-to-copy.
-3. Admin runs `/admin approve <id> <alias>` on the **admin bot**:
+3. Admin runs `/users approve <id> <alias>` on the **admin bot**:
    - The bot checks `vpn list` inside `vpn-russia`. If the alias already exists it runs `vpn rotate <alias>` (issuing a new UUID, invalidating the old client), otherwise `vpn add <alias>`.
-   - The user row is set to `APPROVED` and the user gets a "you're in" DM on the public bot.
-   - The admin gets back, on the admin bot: a header line, the rendered `vless://…` URI inside a tap-to-copy code block, and a PNG QR code rendered by `qrencode` inside the russia container.
-4. Admin runs `/admin deny <id>` or `/admin remove <id>`:
+   - The user row is set to `APPROVED` and the user gets a "you're in" DM on the public bot, plus the rendered `vless://…` URI (tap-to-copy) and a PNG QR.
+   - The admin gets the same URI + QR back on the admin bot for their records.
+4. Admin runs `/users deny <id>` or `/users remove <id>`:
    - The bot looks up the alias from the DB, then runs `vpn remove <alias>` against `vpn-russia` so the access key is actually revoked, not just marked DENIED.
+   - The user is DM'd a short notification ("Your access was revoked…").
    - `deny` keeps the row with status `DENIED` so the user can't re-register.
    - `remove` hard-deletes the row, leaving the Telegram user free to `/start` again.
 5. Admin runs `/send <text>` on the admin bot — every `APPROVED` user receives the text via the public bot. The admin gets a one-line `sent / total, failed` report.
+6. Admin can run any in-container `vpn` subcommand via `/vpn <args…>` and gets the full stdout/stderr back as a code block. Useful for reading domain lists, ad-hoc debugging, etc.
 
 There are no inline buttons; everything is text commands. Both bots use long polling — no public webhook, no port to expose to the internet. Port `8080` is only reachable inside the `vpn-bot-net` Docker network for the actuator healthcheck.
 
@@ -53,18 +55,23 @@ docker compose logs -f vpn-bot
 ### Admin bot — `ADMIN_TG_ID` only, all others ignored
 
 ```
-/admin approve <id> <alias>         approve a pending user; provisions or rotates the VLESS user
-                                    on vpn-russia and DMs the URI + QR back to admin
-/admin deny <id>                    mark user DENIED (kept in db, can't re-register);
-                                    revokes the VPN user on vpn-russia if one exists
-/admin remove <id>                  hard-delete the row (user can re-register from scratch);
-                                    revokes the VPN user on vpn-russia if one exists
-/admin list                         list all users + summary line: Total: N (approved=X, pending=Y, denied=Z)
+/users approve <id> <alias>         approve a pending user; provisions or rotates the VLESS user
+                                    on vpn-russia and DMs the URI + QR to both admin and user
+/users deny <id>                    mark user DENIED (kept in db, can't re-register);
+                                    revokes the VPN user on vpn-russia if one exists;
+                                    DMs the user a revocation notice
+/users remove <id>                  hard-delete the row (user can re-register from scratch);
+                                    revokes the VPN user on vpn-russia if one exists;
+                                    DMs the user a revocation notice
+/users list                         list all users + summary line: Total: N (approved=X, pending=Y, denied=Z)
 /send <text>                        broadcast text via the public bot to every APPROVED user
 /sendto <id1>,<id2>,... <text>      send text to the listed users (any status); unknown ids are reported back
+/vpn <subcommand> [args…]           passthrough — runs `docker exec vpn-russia vpn <args>` and
+                                    returns the full output (e.g. /vpn list, /vpn russia list,
+                                    /vpn show alice). Output truncated to fit Telegram's 4 KB cap.
 ```
 
-The `<id>` is the bot's local sequential id from `bot_user.id`, **not** the Telegram user id. Use `/admin list` to see it. The new-pending notification already pre-fills the right id into the command templates and renders them as tap-to-copy code blocks in MarkdownV2.
+The `<id>` is the bot's local sequential id from `bot_user.id`, **not** the Telegram user id. Use `/users list` to see it. The new-pending notification already pre-fills the right id into the command templates and renders them as tap-to-copy inline code in MarkdownV2.
 
 `deny` vs `remove`: `deny` keeps the row with status `DENIED` so the unique constraint on `tg_user_id` blocks re-registration. `remove` deletes the row entirely, so the same Telegram user can `/start` again and land back in the queue.
 
@@ -99,7 +106,7 @@ bot/
         │   ├── AdminUpdateHandler.java    # marker: routed to the admin bot
         │   ├── AdminGuard.java            # isAdmin(msg) check against ADMIN_TG_ID
         │   ├── TgMarkdown.java            # MarkdownV2 escape + inline-code helpers
-        │   └── handlers/                  # /start (public), /admin /send /sendto (admin)
+        │   └── handlers/                  # /start (public); /users /send /sendto /vpn (admin)
         ├── user/                  # BotUser entity, UserStatus, UserService, UserRepository
         ├── broadcast/             # BroadcastService — sends via the public bot
         ├── notify/                # AdminNotifier — admin DMs via adminBot, user "you're in" DM via publicBot
